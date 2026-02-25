@@ -35,6 +35,9 @@ class ProjectState:
     pending_questions: list = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_updated_at: str = ""
+    # architect 에이전트가 결정한 언어/프레임워크 (빈 문자열이면 미결정)
+    language: str = ""
+    framework: str = ""
 
     def save(self, path: Path) -> None:
         """상태를 JSON 파일로 저장한다.
@@ -67,6 +70,9 @@ class ProjectState:
             data = json.load(f)
 
         data["phase"] = PhaseType(data["phase"])
+        # 이전 버전 state.json과 호환: 없는 필드는 기본값 사용
+        data.setdefault("language", "")
+        data.setdefault("framework", "")
         return cls(**data)
 
     @classmethod

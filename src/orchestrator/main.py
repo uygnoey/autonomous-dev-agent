@@ -182,29 +182,64 @@ class AutonomousOrchestrator:
         await self.executor.execute(doc_prompt)
 
     async def _phase_setup(self) -> None:
-        """Phase 1: 프로젝트 초기 구성."""
+        """Phase 1: 프로젝트 초기 구성.
+
+        architect 에이전트가 스펙 분석 → 언어/프레임워크 선택 → 초기 구조 생성.
+        완료 후 .claude/project-info.json 을 읽어 state.language/framework 를 업데이트한다.
+        """
         self.state.phase = PhaseType.SETUP
         logger.info("Phase 1: 프로젝트 초기 구성")
         await self._emit(EventType.LOG, {"message": "Phase 1: 프로젝트 초기 구성"})
 
         setup_prompt = f"""
-프로젝트 스펙에 따라 초기 구성을 수행하세요.
+프로젝트 스펙을 분석하고 초기 구성을 수행하세요.
 
 [스펙]
 {self.state.spec}
 
 수행할 작업:
-1. 디렉토리 구조 생성 (design-patterns 스킬 참조)
-2. 패키지 매니저 초기화 (pyproject.toml 또는 package.json)
-3. 기본 설정 파일 생성
-4. 디자인 패턴에 맞는 베이스 코드 스캐폴딩
-5. 테스트 프레임워크 설정
-6. 린트/타입체크 설정
+1. 스펙에 가장 적합한 언어와 프레임워크를 선택하세요.
+   - 언어가 스펙에 명시되지 않았다면 프로젝트 성격에 맞게 직접 선택하세요.
+   - 선택 이유를 간략히 설명하세요.
+
+2. 선택 결과를 반드시 .claude/project-info.json 에 저장하세요:
+   {{
+     "language": "<선택한 언어 (python, javascript, typescript, go, rust, java, ruby 등)>",
+     "framework": "<선택한 프레임워크 (fastapi, nextjs, gin, actix, spring 등, 없으면 빈 문자열)>",
+     "test_tool": "<테스트 도구 (pytest, jest, go test, cargo test, rspec 등)>",
+     "lint_tool": "<린트 도구 (ruff, eslint, golangci-lint, clippy, rubocop 등)>",
+     "build_command": "<빌드 명령어>"
+   }}
+
+3. 디렉토리 구조 생성 (.claude/skills/design-patterns/SKILL.md 참조)
+4. 패키지 매니저 초기화 (선택한 언어에 맞게)
+5. 기본 설정 파일 생성
+6. 디자인 패턴에 맞는 베이스 코드 스캐폴딩
+7. 테스트 프레임워크 설정
+8. 린트/타입체크 설정
 
 반드시 .claude/skills/ 의 모든 스킬을 읽고 따르세요.
 """
         await self.executor.execute(setup_prompt)
+        self._load_project_info()
         self.state.phase = PhaseType.BUILD
+
+    def _load_project_info(self) -> None:
+        """architect가 저장한 .claude/project-info.json 을 읽어 state 를 업데이트한다."""
+        import json as _json
+
+        info_path = self.project_path / ".claude" / "project-info.json"
+        if not info_path.exists():
+            logger.warning("project-info.json 없음. 언어/프레임워크 자동 감지로 폴백.")
+            return
+        try:
+            info = _json.loads(info_path.read_text())
+            self.state.language = info.get("language", "")
+            self.state.framework = info.get("framework", "")
+            self.state.save(self.project_path / ".claude" / "state.json")
+            logger.info(f"언어: {self.state.language}, 프레임워크: {self.state.framework}")
+        except Exception as e:
+            logger.warning(f"project-info.json 파싱 실패: {e}")
 
     async def _handle_issues(self, issues: list) -> None:
         """이슈를 분류하여 처리한다."""
