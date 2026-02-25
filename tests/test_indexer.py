@@ -1,9 +1,10 @@
 """CodebaseIndexer 유닛 테스트."""
 
-import pytest
 from pathlib import Path
 
-from src.rag.indexer import CodebaseIndexer, CodeChunk
+import pytest
+
+from src.rag.indexer import CodebaseIndexer
 
 
 @pytest.fixture

@@ -1,12 +1,10 @@
 """작업 계획 수립기.
 
-Claude API를 사용하여 현재 프로젝트 상태를 분석하고
+Claude API 또는 Claude Code 세션을 사용하여 현재 프로젝트 상태를 분석하고
 다음에 수행할 작업을 결정한다.
 """
 
-import anthropic
-from anthropic.types import TextBlock
-
+from src.utils.claude_client import call_claude_for_text
 from src.utils.logger import setup_logger
 from src.utils.state import ProjectState
 
@@ -14,10 +12,9 @@ logger = setup_logger(__name__)
 
 
 class Planner:
-    """Claude API로 다음 작업을 결정하는 계획 수립기."""
+    """Claude로 다음 작업을 결정하는 계획 수립기."""
 
     def __init__(self, model: str = "claude-sonnet-4-6-20260217"):
-        self._client = anthropic.Anthropic()
         self._model = model
 
     async def decide_next_task(self, state: ProjectState) -> str:
@@ -29,27 +26,17 @@ class Planner:
         Returns:
             Claude Agent SDK가 실행할 구체적 프롬프트 문자열
         """
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=4096,
+        task_prompt = await call_claude_for_text(
             system=PLANNER_SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": self._build_context(state),
-            }],
+            user=self._build_context(state),
+            model=self._model,
         )
-
-        content = response.content[0]
-        if not isinstance(content, TextBlock):
-            raise ValueError(f"예상치 못한 응답 블록 타입: {type(content)}")
-        task_prompt = content.text
         logger.info(f"다음 작업 결정: {task_prompt[:100]}...")
         return task_prompt
 
     def _build_context(self, state: ProjectState) -> str:
         """Planner에게 전달할 컨텍스트를 구성한다."""
-        return f"""
-현재 프로젝트 상태:
+        return f"""현재 프로젝트 상태:
 - 스펙: {state.spec[:500]}...
 - 현재 Phase: {state.phase}
 - 반복 횟수: {state.iteration}

@@ -1,6 +1,6 @@
 """이슈 분류기.
 
-Claude API를 사용하여 이슈를 크리티컬/비크리티컬로 분류한다.
+Claude API 또는 Claude Code 세션을 사용하여 이슈를 크리티컬/비크리티컬로 분류한다.
 
 크리티컬 (즉시 사람에게):
 - 스펙 모호, 외부 연동 정보 필요, 스펙 간 모순, 보안 결정
@@ -12,9 +12,7 @@ Claude API를 사용하여 이슈를 크리티컬/비크리티컬로 분류한�
 import json
 from enum import StrEnum
 
-import anthropic
-from anthropic.types import TextBlock
-
+from src.utils.claude_client import call_claude_for_text
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -26,10 +24,9 @@ class IssueLevel(StrEnum):
 
 
 class IssueClassifier:
-    """Claude API로 이슈를 분류하는 분류기."""
+    """Claude로 이슈를 분류하는 분류기."""
 
     def __init__(self, model: str = "claude-sonnet-4-6-20260217"):
-        self._client = anthropic.Anthropic()
         self._model = model
 
     async def classify(self, verification: dict) -> list[dict]:
@@ -46,26 +43,17 @@ class IssueClassifier:
         if self._is_purely_technical(verification):
             return []
 
-        # 비기술적 이슈가 있을 수 있는 경우만 Claude API로 분류
+        # 비기술적 이슈가 있을 수 있는 경우만 Claude로 분류
         issues_text = verification.get("issues", [])
         if not issues_text:
             return []
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=2048,
+        response_text = await call_claude_for_text(
             system=CLASSIFIER_SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": f"검증 결과의 이슈 목록:\n{issues_text}",
-            }],
+            user=f"검증 결과의 이슈 목록:\n{issues_text}",
+            model=self._model,
         )
-
-        content = response.content[0]
-        if not isinstance(content, TextBlock):
-            logger.warning("예상치 못한 응답 블록 타입. 빈 목록 반환.")
-            return []
-        return self._parse_response(content.text)
+        return self._parse_response(response_text)
 
     def _is_purely_technical(self, verification: dict) -> bool:
         """순수 기술적 이슈(에이전트가 해결 가능)만 있는지 확인."""
@@ -93,7 +81,7 @@ class IssueClassifier:
         return True
 
     def _parse_response(self, text: str) -> list[dict]:
-        """Claude API 응답을 파싱한다."""
+        """Claude 응답을 파싱한다."""
         try:
             # JSON 블록 추출
             if "```json" in text:

@@ -1,10 +1,8 @@
 """ProjectState 유닛 테스트."""
 
-import json
-import pytest
 from pathlib import Path
 
-from src.utils.state import ProjectState, PhaseType
+from src.utils.state import PhaseType, ProjectState
 
 
 class TestProjectState:
