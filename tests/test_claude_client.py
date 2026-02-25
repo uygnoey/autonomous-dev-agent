@@ -32,6 +32,28 @@ class TestCallViaApi:
             messages=[{"role": "user", "content": "user"}],
         )
 
+    def test_calls_usage_callback_when_provided(self):
+        """usage_callback이 제공되면 토큰 사용량과 함께 호출된다. (line 69)"""
+        from anthropic.types import TextBlock
+
+        from src.utils.claude_client import _call_via_api
+
+        mock_block = MagicMock(spec=TextBlock)
+        mock_block.text = "result"
+        mock_response = MagicMock()
+        mock_response.content = [mock_block]
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        callback = MagicMock()
+
+        with patch("src.utils.claude_client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.return_value = mock_response
+            _call_via_api("system", "user", "model", 1024, callback)
+
+        callback.assert_called_once_with(100, 50)
+
     def test_raises_on_non_text_block(self):
         from src.utils.claude_client import _call_via_api
 

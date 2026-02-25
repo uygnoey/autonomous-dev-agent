@@ -296,9 +296,22 @@ class AgentExecutor:
             max_turns: 에이전트 최대 실행 턴 수
             use_rag: RAG MCP 서버 활성화 여부
         """
+        import os
+
         self._project_path = project_path
         self._max_turns = max_turns
         self._use_rag = use_rag
+
+        # Agent Teams 환경 변수 확인 및 로깅
+        teams_enabled = os.getenv("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS")
+        subagent_model = os.getenv("CLAUDE_CODE_SUBAGENT_MODEL")
+
+        if teams_enabled == "1":
+            logger.info("✅ Agent Teams 활성화됨")
+            if subagent_model:
+                logger.info(f"   서브에이전트 모델: {subagent_model}")
+        else:
+            logger.warning("⚠️  Agent Teams가 비활성화되어 있습니다. .env 파일을 확인하세요.")
 
     def _classify_task(self, task_prompt: str) -> AgentType:
         """task_prompt 내용을 분석하여 적합한 에이전트 유형을 반환한다.
@@ -337,7 +350,7 @@ class AgentExecutor:
         options = ClaudeAgentOptions(
             system_prompt=profile.system_prompt,
             allowed_tools=list(profile.allowed_tools),
-            permission_mode="acceptEdits",
+            permission_mode="delegate",  # 완전 자율 실행 (모든 도구 자동 승인)
             cwd=self._project_path,
             max_turns=self._max_turns,
             setting_sources=["project"],

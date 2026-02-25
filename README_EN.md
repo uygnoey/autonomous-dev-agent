@@ -32,11 +32,50 @@ Orchestrator
 ## Installation
 
 ### Requirements
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
-- `ANTHROPIC_API_KEY` environment variable
 
-### Setup
+**No requirements needed!** 🎉
+
+The installation script automatically installs:
+- Python 3.12 (if missing or old version)
+- Git (if missing)
+- uv package manager
+- Node.js (for Claude Code)
+- Claude Code CLI (optional)
+
+### 🚀 Fully Automated Installation (Highly Recommended)
+
+**You don't need anything pre-installed!**
+
+```bash
+# Remote installation on macOS/Linux
+curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+
+# Or using wget
+wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+```
+
+**If you already have Git:**
+
+```bash
+git clone <repo-url>
+cd autonomous-dev-agent
+./scripts/install.sh
+```
+
+The script automatically:
+- ✅ **Installs Git** (if missing)
+- ✅ **Installs Python 3.12** (if missing or old version)
+- ✅ **Installs Node.js** (if missing)
+- ✅ **Installs uv package manager**
+- ✅ **Installs Claude Code** (optional)
+- ✅ Creates virtual environment
+- ✅ Installs dependencies
+- ✅ Creates .env file
+- ✅ Runs verification tests
+
+### Manual Installation
+
+If you prefer manual installation:
 
 ```bash
 # Clone the repository

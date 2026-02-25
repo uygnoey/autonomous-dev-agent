@@ -23,7 +23,7 @@ class AppConfig:
 
     # Agent 실행 설정
     max_turns_per_task: int = 100
-    permission_mode: str = "acceptEdits"
+    permission_mode: str = "delegate"  # 완전 자율 실행
 
     # 토큰 한도 대기 설정
     initial_wait_seconds: int = 60

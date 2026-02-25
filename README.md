@@ -55,11 +55,28 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 
 ### 요구사항
 
-- Python 3.12 이상
-- [uv](https://docs.astral.sh/uv/) 패키지 매니저
-- Anthropic API 키 또는 Claude Code 세션 (`claude` CLI 인증)
+**필수 요구사항 없음!** 🎉
 
-### 원클릭 설치 (권장)
+설치 스크립트가 다음을 자동으로 설치합니다:
+- Python 3.12 (없을 경우)
+- Git (없을 경우)
+- uv 패키지 매니저
+- Node.js (Claude Code를 위해)
+- Claude Code CLI (선택)
+
+### 🚀 완전 자동 설치 (최고 권장)
+
+**아무것도 설치되어 있지 않아도 됩니다!**
+
+```bash
+# macOS/Linux에서 원격 설치
+curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+
+# 또는 wget 사용
+wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+```
+
+**Git이 이미 있다면:**
 
 ```bash
 git clone <repo-url>
@@ -68,8 +85,11 @@ cd autonomous-dev-agent
 ```
 
 설치 스크립트가 자동으로:
-- ✅ Python 3.12 이상 확인
-- ✅ uv 패키지 매니저 설치
+- ✅ **Git 설치** (없을 경우)
+- ✅ **Python 3.12 설치** (없거나 버전이 낮을 경우)
+- ✅ **Node.js 설치** (없을 경우)
+- ✅ **uv 패키지 매니저 설치**
+- ✅ **Claude Code 설치** (선택)
 - ✅ 가상환경 생성
 - ✅ 의존성 설치
 - ✅ .env 파일 생성
@@ -286,7 +306,38 @@ TUI 코드(`src/ui/`)는 Textual 앱 구동이 필요하므로 자동화 테스�
 
 ## Agent Teams
 
-`.claude/settings.json`에 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`이 설정되어 있습니다. 이 설정으로 Claude Code의 Agent Teams 기능이 활성화됩니다.
+### 활성화 방법
+
+Agent Teams는 **자동으로 활성화**됩니다:
+
+1. **설치 시 자동 설정**: `install.sh`가 `.env` 파일에 필수 환경 변수를 자동으로 추가합니다
+2. **자동 로딩**: CLI 실행 시 `.env` 파일이 자동으로 로드됩니다 (python-dotenv 사용)
+3. **다중 설정**: `.env` 파일과 `.claude/settings.json` 모두에 Agent Teams 설정이 포함됩니다
+
+**확인 방법:**
+
+```bash
+# CLI 실행 시 로그 확인
+adev
+
+# 출력 예시:
+# ✅ Agent Teams 활성화됨
+#    서브에이전트 모델: claude-sonnet-4-6
+```
+
+### 환경 변수
+
+`.env` 파일에 다음 환경 변수가 설정됩니다:
+
+```dotenv
+# Agent Teams 활성화
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
+# 서브에이전트 모델 (비용 절감)
+CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-4-6
+```
+
+### 에이전트 라우팅
 
 `AgentExecutor`는 task_prompt의 키워드를 분석하여 아래 다섯 개 에이전트 중 하나를 자동으로 선택합니다.
 

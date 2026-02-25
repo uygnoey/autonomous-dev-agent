@@ -7,8 +7,10 @@ asyncio_mode="auto"이므로 @pytest.mark.asyncio 불필요.
 from __future__ import annotations
 
 import asyncio
+import runpy
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from textual.app import App, ComposeResult
@@ -331,6 +333,240 @@ class TestDevScreen:
                 screen._handle_event(event)
                 mock_on_log.assert_called_once_with({"level": "info", "message": "테스트 로그"})
 
+    async def test_on_log_writes_to_richlog(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """_on_log() 직접 호출 시 RichLog에 메시지를 출력한다. (lines 373-378)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            # 예외 없이 실행되어야 함 (error, warning, info, unknown 레벨 모두)
+            screen._on_log({"level": "error", "message": "에러 메시지"})
+            screen._on_log({"level": "warning", "message": "경고 메시지"})
+            screen._on_log({"level": "info", "message": "정보 메시지"})
+            screen._on_log({"level": "unknown", "message": "미지 레벨"})
+            await pilot.pause()
+
+    async def test_handle_event_progress_branch(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """PROGRESS 이벤트 → _on_progress() 호출. (lines 365-366, 381-382)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            screen._handle_event(
+                Event(
+                    type=EventType.PROGRESS,
+                    data={
+                        "iteration": 3,
+                        "phase": "coding",
+                        "completion_percent": 50.0,
+                        "test_pass_rate": 70.0,
+                        "lint_errors": 0,
+                        "type_errors": 0,
+                        "build_success": True,
+                    },
+                )
+            )
+            await pilot.pause()
+
+            assert "50.0%" in str(screen.query_one("#label-completion", Label).content)
+
+    async def test_handle_event_question_branch(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """QUESTION 이벤트 → _on_question() 호출. (lines 367-368)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            screen._handle_event(
+                Event(
+                    type=EventType.QUESTION,
+                    data={"issue": {"description": "handle_event QUESTION 분기"}},
+                )
+            )
+            await pilot.pause()
+
+            assert screen._waiting_for_answer
+
+    async def test_handle_event_completed_branch(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """COMPLETED 이벤트 → _on_completed() 호출. (lines 369-370)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            screen._handle_event(
+                Event(
+                    type=EventType.COMPLETED,
+                    data={
+                        "is_complete": True,
+                        "iteration": 5,
+                        "test_pass_rate": 100.0,
+                        "lint_errors": 0,
+                        "type_errors": 0,
+                        "build_success": True,
+                        "pending_questions": [],
+                    },
+                )
+            )
+            await pilot.pause()
+
+            assert len(screen.query(".completed-box")) == 1
+
+    async def test_listen_events_dispatches_event(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """_listen_events 워커가 이벤트 수신 시 _handle_event를 호출한다. (line 357)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            with patch.object(screen, "_handle_event") as mock_handle:
+                await event_bus.publish(
+                    Event(
+                        type=EventType.LOG,
+                        data={"level": "info", "message": "이벤트 루프 테스트"},
+                    )
+                )
+                await pilot.pause()
+
+                mock_handle.assert_called_once()
+
+    async def test_run_orchestrator_awaits_run(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """_run_orchestrator가 AutonomousOrchestrator.run()을 호출한다. (line 349)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            mock_run = AsyncMock()
+            patched_orchestrator.return_value.run = mock_run
+            await screen._run_orchestrator()
+
+        mock_run.assert_awaited_once()
+
+    async def test_on_input_submitted_triggers_send_answer(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """question-input Enter → action_send_answer() 호출. (lines 443-444)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            screen._on_question({"issue": {"description": "test"}})
+            await pilot.pause()
+
+            q_input = screen.query_one("#question-input", Input)
+            q_input.value = "답변 내용"
+            mock_event = MagicMock()
+            mock_event.input.id = "question-input"
+            screen.on_input_submitted(mock_event)
+            await pilot.pause()
+
+            assert q_input.value == ""
+            assert not screen._waiting_for_answer
+
+    async def test_on_button_pressed_triggers_send_answer(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """question-send-btn 클릭 → action_send_answer() 호출. (lines 447-448)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            screen._on_question({"issue": {"description": "test"}})
+            await pilot.pause()
+
+            q_input = screen.query_one("#question-input", Input)
+            q_input.value = "버튼 답변"
+            mock_event = MagicMock()
+            mock_event.button.id = "question-send-btn"
+            screen.on_button_pressed(mock_event)
+            await pilot.pause()
+
+            assert q_input.value == ""
+
+    async def test_dev_action_quit_app_calls_exit(
+        self, tmp_path: Path, patched_orchestrator: MagicMock
+    ) -> None:
+        """DevScreen action_quit_app → app.exit() 호출. (line 463)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(DevScreen(tmp_path, "spec", event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: DevScreen = app.screen  # type: ignore[assignment]
+
+            with patch.object(app, "exit") as mock_exit:
+                screen.action_quit_app()
+            mock_exit.assert_called_once()
+
 
 # ─── SpecScreen ──────────────────────────────────────────────────────
 
@@ -392,6 +628,148 @@ class TestSpecScreen:
             assert len(screen.query(".msg-user")) == 1
             assert user_input.value == ""
 
+    async def test_on_input_submitted_calls_action_send(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """on_input_submitted → action_send() 호출. (line 147)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: SpecScreen = app.screen  # type: ignore[assignment]
+
+            user_input = screen.query_one("#user-input", Input)
+            user_input.value = "테스트 입력"
+            screen.on_input_submitted(MagicMock())
+            await pilot.pause()
+
+            assert len(screen.query(".msg-user")) == 1
+            assert user_input.value == ""
+
+    async def test_on_button_pressed_calls_action_send(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """on_button_pressed → send-btn이면 action_send() 호출. (lines 150-151)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: SpecScreen = app.screen  # type: ignore[assignment]
+
+            user_input = screen.query_one("#user-input", Input)
+            user_input.value = "버튼 클릭 테스트"
+            mock_event = MagicMock()
+            mock_event.button.id = "send-btn"
+            screen.on_button_pressed(mock_event)
+            await pilot.pause()
+
+            assert len(screen.query(".msg-user")) == 1
+
+    async def test_action_quit_app_calls_exit(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """action_quit_app → app.exit() 호출. (line 165)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: SpecScreen = app.screen  # type: ignore[assignment]
+
+            with patch.object(app, "exit") as mock_exit:
+                screen.action_quit_app()
+            mock_exit.assert_called_once()
+
+    async def test_run_spec_builder_pushes_dev_screen(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """SpecBuilder.build() 완료 시 DevScreen으로 전환한다. (line 122)"""
+        event_bus = EventBus()
+
+        async def fast_build(path: Path) -> str:
+            return "스펙 내용"
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        with patch("src.ui.tui.app.AutonomousOrchestrator") as mock_orch:
+            mock_orch.return_value.run = _hang
+            app = _App()
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                screen: SpecScreen = app.screen  # type: ignore[assignment]
+                screen._spec_builder.build = fast_build  # type: ignore[assignment]
+
+                await screen._run_spec_builder()
+                await pilot.pause()
+
+                assert isinstance(app.screen, DevScreen)
+
+    async def test_run_spec_builder_handles_exception(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """SpecBuilder.build() 예외 발생 시 에러 메시지를 표시한다. (line 124)"""
+        event_bus = EventBus()
+
+        async def failing_build(path: Path) -> str:
+            raise ValueError("빌드 실패")
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: SpecScreen = app.screen  # type: ignore[assignment]
+            screen._spec_builder.build = failing_build  # type: ignore[assignment]
+
+            await screen._run_spec_builder()
+            await pilot.pause()
+
+            messages = screen.query(".msg-assistant")
+            assert any("오류" in str(m.content) for m in messages)
+
+    async def test_listen_spec_events_adds_spec_message(
+        self, tmp_path: Path, patched_spec_builder: MagicMock
+    ) -> None:
+        """SPEC_MESSAGE 이벤트 수신 시 채팅 영역에 메시지를 추가한다. (lines 132-135)"""
+        event_bus = EventBus()
+
+        class _App(App[None]):
+            def on_mount(self) -> None:
+                self.push_screen(SpecScreen(tmp_path, event_bus))
+
+        app = _App()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen: SpecScreen = app.screen  # type: ignore[assignment]
+
+            await event_bus.publish(
+                Event(
+                    type=EventType.SPEC_MESSAGE,
+                    data={"role": "assistant", "content": "스펙 메시지 테스트"},
+                )
+            )
+            await pilot.pause()
+
+            assert len(screen.query(".msg-assistant")) >= 1
+
 
 # ─── run_tui ─────────────────────────────────────────────────────────
 
@@ -414,3 +792,24 @@ class TestRunTui:
             mock_cls.return_value = mock_instance
             run_tui()
             assert mock_cls.call_args.kwargs["project_path"] == Path.cwd()
+
+
+# ─── TUI __main__ ────────────────────────────────────────────────────
+
+
+class TestTuiMain:
+    """src/ui/tui/__main__.py if __name__ == '__main__' 블록 테스트."""
+
+    def test_main_block_calls_run_tui(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """if __name__ == '__main__' 블록이 run_tui를 호출한다. (__main__.py:13-16)"""
+        monkeypatch.setattr(sys, "argv", ["src.ui.tui"])
+        with patch("src.ui.tui.app.run_tui") as mock_run:
+            runpy.run_module("src.ui.tui", run_name="__main__", alter_sys=False)
+        mock_run.assert_called_once_with(project_path=None, spec_file=None)
+
+    def test_main_block_passes_argv(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """sys.argv에 project_path가 있으면 run_tui에 그대로 전달된다."""
+        monkeypatch.setattr(sys, "argv", ["src.ui.tui", str(tmp_path)])
+        with patch("src.ui.tui.app.run_tui") as mock_run:
+            runpy.run_module("src.ui.tui", run_name="__main__", alter_sys=False)
+        mock_run.assert_called_once_with(project_path=str(tmp_path), spec_file=None)

@@ -10,7 +10,7 @@ agent:
   # 코드 실행용 모델 (Agent SDK)
   # Agent SDK는 기본 모델을 자동 선택하므로 보통 지정 불필요
   max_turns_per_task: 100
-  permission_mode: "acceptEdits"
+  permission_mode: "delegate"  # 완전 자율 실행 (모든 도구 자동 승인)
 
 token:
   # 토큰 한도 대기 설정

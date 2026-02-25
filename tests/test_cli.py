@@ -1,11 +1,12 @@
 """cli.py 테스트."""
 
+import runpy
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.cli import main, cli_main
+from src.cli import cli_main, main
 
 
 class TestMain:
@@ -98,17 +99,17 @@ class TestCliMain:
             captured["project_path"] = project_path
             captured["spec"] = spec
             # 최소한의 초기화
-            from pathlib import Path as P
+            from pathlib import Path as PathCls
+
             from src.utils.config import load_config
-            from src.utils.events import EventBus
             from src.utils.state import ProjectState
-            self.project_path = P(project_path)
+            self.project_path = PathCls(project_path)
             self.state = ProjectState(spec=spec)
             self._event_bus = event_bus
             config = load_config()
-            from src.orchestrator.token_manager import TokenManager
-            from src.orchestrator.planner import Planner
             from src.orchestrator.issue_classifier import IssueClassifier
+            from src.orchestrator.planner import Planner
+            from src.orchestrator.token_manager import TokenManager
             self.token_manager = TokenManager()
             self.planner = Planner()
             self.classifier = IssueClassifier()
@@ -127,3 +128,12 @@ class TestCliMain:
 
         assert captured["project_path"] == str(tmp_path)
         assert captured["spec"] == "스펙"
+
+
+class TestCliMainBlock:
+    def test_main_block_calls_main_function(self, monkeypatch):
+        """if __name__ == '__main__' 블록이 main()을 호출한다. (cli.py:63)"""
+        monkeypatch.setattr(sys, "argv", ["src.cli"])
+        with patch("src.ui.tui.app.run_tui") as mock_run_tui:
+            runpy.run_module("src.cli", run_name="__main__", alter_sys=False)
+        mock_run_tui.assert_called_once_with(project_path=None, spec_file=None)

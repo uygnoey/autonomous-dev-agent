@@ -26,6 +26,42 @@ class TestAutonomousOrchestrator:
         self.orch.token_manager = AsyncMock()
         self.orch.state.save = MagicMock()
 
+    def test_load_project_info_reads_json_file(self, tmp_path):
+        """project-info.json이 있으면 읽어서 state를 업데이트한다. (lines 251-256)"""
+        info_dir = tmp_path / ".claude"
+        info_dir.mkdir()
+        (info_dir / "project-info.json").write_text(
+            '{"language": "python", "framework": "pytest"}'
+        )
+
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator(str(tmp_path), "spec")
+        orch.state = MagicMock()
+        orch._load_project_info()
+
+        orch.state.save.assert_called_once()
+        assert orch.state.language == "python"
+        assert orch.state.framework == "pytest"
+
+    def test_load_project_info_handles_invalid_json(self, tmp_path):
+        """project-info.json이 유효하지 않은 JSON이면 예외를 처리하고 넘어간다. (lines 257-258)"""
+        info_dir = tmp_path / ".claude"
+        info_dir.mkdir()
+        (info_dir / "project-info.json").write_text("not valid json{{")
+
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator(str(tmp_path), "spec")
+        orch.state = MagicMock()
+        orch._load_project_info()  # 예외 없이 완료되어야 함
+
+        orch.state.save.assert_not_called()
+
     # ─── _is_complete() ───────────────────────────────────────────────
 
     def test_is_complete_returns_true_when_all_criteria_met(self):

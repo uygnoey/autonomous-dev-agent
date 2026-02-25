@@ -7,6 +7,12 @@
 import sys
 from pathlib import Path
 
+# .env 파일 로드 (Agent Teams 환경 변수 포함)
+from dotenv import load_dotenv
+
+# 프로젝트 루트의 .env 파일 로드
+load_dotenv()
+
 
 def main() -> None:
     """CLI 메인 함수.

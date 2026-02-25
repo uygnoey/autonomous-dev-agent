@@ -8,7 +8,13 @@
 
 import sys
 
+# .env 파일 로드 (Agent Teams 환경 변수 포함)
+from dotenv import load_dotenv
+
 from src.ui.tui.app import run_tui
+
+# 프로젝트 루트의 .env 파일 로드
+load_dotenv()
 
 if __name__ == "__main__":
     project_path = sys.argv[1] if len(sys.argv) > 1 else None

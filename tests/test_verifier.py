@@ -109,6 +109,49 @@ class TestVerifier:
         assert result["tests_total"] == 0
         assert result["build_success"] is False
 
+    def test_load_project_info_reads_valid_file(self, tmp_path):
+        """유효한 project-info.json 파일을 읽어 dict를 반환한다. (lines 31-33)"""
+        info_dir = tmp_path / ".claude"
+        info_dir.mkdir()
+        (info_dir / "project-info.json").write_text('{"language": "python", "framework": "pytest"}')
+
+        verifier = Verifier(project_path=str(tmp_path))
+        result = verifier._load_project_info()
+
+        assert result == {"language": "python", "framework": "pytest"}
+
+    def test_load_project_info_handles_invalid_json(self, tmp_path):
+        """project-info.json이 유효하지 않은 JSON이면 빈 dict를 반환한다. (lines 34-35)"""
+        info_dir = tmp_path / ".claude"
+        info_dir.mkdir()
+        (info_dir / "project-info.json").write_text("invalid json content")
+
+        verifier = Verifier(project_path=str(tmp_path))
+        result = verifier._load_project_info()
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_verify_all_uses_language_hint_when_language_set(self, tmp_path):
+        """project-info.json에 language가 있으면 언어 힌트 분기가 실행된다. (line 61)"""
+        info_dir = tmp_path / ".claude"
+        info_dir.mkdir()
+        (info_dir / "project-info.json").write_text('{"language": "python", "test_tool": "pytest"}')
+
+        verifier = Verifier(project_path=str(tmp_path))
+        json_response = (
+            "```json\n"
+            '{"tests_total": 3, "tests_passed": 3, "tests_failed": 0, '
+            '"lint_errors": 0, "type_errors": 0, "build_success": true, "issues": []}\n'
+            "```"
+        )
+        mock_msg = make_assistant_message_with_text(json_response)
+        with patch("src.agents.verifier.query", new=make_mock_query(mock_msg)):
+            result = await verifier.verify_all()
+
+        assert result["tests_total"] == 3
+        assert result["build_success"] is True
+
     def test_parse_results_merges_with_defaults(self):
         """파싱된 값이 기본값과 병합된다."""
         mock_block = MagicMock(spec=TextBlock)

@@ -17,7 +17,6 @@ from src.agents.executor import (
     AgentType,
 )
 
-
 # ---------------------------------------------------------------------------
 # 헬퍼 / Helpers
 # ---------------------------------------------------------------------------
@@ -331,9 +330,8 @@ class TestExecute:
         """agent_type=None일 때 _classify_task가 호출되는지 확인."""
         with patch.object(
             self.executor, "_classify_task", return_value=AgentType.CODER
-        ) as mock_classify:
-            with patch("src.agents.executor.query", new=make_mock_query()):
-                await self.executor.execute("구현해주세요", agent_type=None)
+        ) as mock_classify, patch("src.agents.executor.query", new=make_mock_query()):
+            await self.executor.execute("구현해주세요", agent_type=None)
 
         mock_classify.assert_called_once_with("구현해주세요")
 
@@ -342,9 +340,8 @@ class TestExecute:
         """agent_type을 명시하면 _classify_task가 호출되지 않는다."""
         with patch.object(
             self.executor, "_classify_task"
-        ) as mock_classify:
-            with patch("src.agents.executor.query", new=make_mock_query()):
-                await self.executor.execute("task", agent_type=AgentType.CODER)
+        ) as mock_classify, patch("src.agents.executor.query", new=make_mock_query()):
+            await self.executor.execute("task", agent_type=AgentType.CODER)
 
         mock_classify.assert_not_called()
 
