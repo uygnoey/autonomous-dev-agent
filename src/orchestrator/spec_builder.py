@@ -36,7 +36,7 @@ class SpecBuilder:
     def __init__(
         self,
         event_bus: EventBus,
-        model: str = "claude-sonnet-4-6-20260217",
+        model: str = "claude-sonnet-4-6",
     ) -> None:
         self._event_bus = event_bus
         self._model = model
