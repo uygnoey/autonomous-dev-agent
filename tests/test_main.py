@@ -266,6 +266,160 @@ class TestAutonomousOrchestrator:
         # 루프 없이 바로 완료 → planner.decide_next_task 호출 안 됨
         self.orch.planner.decide_next_task.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_run_one_iteration_then_complete(self):
+        """루프가 1회 실행된 뒤 완성되면 종료한다. (lines 64-108)"""
+        verification = {
+            "tests_total": 10, "tests_passed": 10,
+            "tests_failed": 0, "lint_errors": 0,
+            "type_errors": 0, "build_success": True, "issues": [],
+        }
+        self.orch.planner.decide_next_task.return_value = "구현 작업"
+        self.orch.verifier.verify_all.return_value = verification
+        self.orch.classifier.classify.return_value = []
+
+        # 첫 번째 while 체크: False(루프 진입), 두 번째: True(루프 탈출)
+        # _report_completion도 mock → _is_complete 추가 호출 방지
+        with (
+            patch.object(self.orch, "_phase_setup", new=AsyncMock()),
+            patch.object(self.orch, "_phase_document", new=AsyncMock()),
+            patch.object(self.orch, "_report_completion", new=AsyncMock()),
+            patch.object(self.orch, "_is_complete", side_effect=[False, True]),
+        ):
+            await self.orch.run()
+
+        self.orch.planner.decide_next_task.assert_called_once()
+        self.orch.executor.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_handles_token_limit_error(self):
+        """TokenLimitError 발생 시 대기 후 루프를 계속한다."""
+        self.orch.planner.decide_next_task.side_effect = [
+            TokenLimitError("한도 초과"),
+            "두 번째 작업",
+        ]
+        self.orch.verifier.verify_all.return_value = {
+            "tests_total": 0, "tests_passed": 0, "tests_failed": 0,
+            "lint_errors": 0, "type_errors": 0, "build_success": True, "issues": [],
+        }
+        self.orch.classifier.classify.return_value = []
+
+        with (
+            patch.object(self.orch, "_phase_setup", new=AsyncMock()),
+            patch.object(self.orch, "_phase_document", new=AsyncMock()),
+            patch.object(self.orch, "_report_completion", new=AsyncMock()),
+            patch.object(self.orch, "_is_complete", side_effect=[False, False, True]),
+        ):
+            await self.orch.run()
+
+        self.orch.token_manager.wait_for_reset.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_handles_unexpected_error(self):
+        """예상치 못한 에러 발생 시 자가 복구를 시도한다."""
+        self.orch.planner.decide_next_task.side_effect = [
+            RuntimeError("예상치 못한 에러"),
+            "두 번째 작업",
+        ]
+        self.orch.verifier.verify_all.return_value = {
+            "tests_total": 0, "tests_passed": 0, "tests_failed": 0,
+            "lint_errors": 0, "type_errors": 0, "build_success": True, "issues": [],
+        }
+        self.orch.classifier.classify.return_value = []
+
+        mock_self_heal = AsyncMock()
+        with (
+            patch.object(self.orch, "_phase_setup", new=AsyncMock()),
+            patch.object(self.orch, "_phase_document", new=AsyncMock()),
+            patch.object(self.orch, "_report_completion", new=AsyncMock()),
+            patch.object(self.orch, "_is_complete", side_effect=[False, False, True]),
+            patch.object(self.orch, "_self_heal", new=mock_self_heal),
+        ):
+            await self.orch.run()
+
+        mock_self_heal.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_breaks_on_max_iterations(self):
+        """MAX_ITERATIONS 초과 시 루프를 탈출하고 보고한다. (lines 67-68)"""
+        with (
+            patch.object(self.orch, "_phase_setup", new=AsyncMock()),
+            patch.object(self.orch, "_phase_document", new=AsyncMock()),
+            patch.object(self.orch, "_report_completion", new=AsyncMock()),
+            patch.object(self.orch, "_is_complete", return_value=False),
+            patch("src.orchestrator.main.MAX_ITERATIONS", 0),
+        ):
+            await self.orch.run()
+
+        # 최대 반복 도달 시 바로 보고로 넘어감 (planner 호출 없음)
+        self.orch.planner.decide_next_task.assert_not_called()
+
+    # ─── _report_completion with user feedback ─────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_report_completion_with_user_answer_reruns(self, capsys):
+        """사용자가 피드백 답변을 주면 executor 실행 후 재시작한다. (lines 272-280)"""
+        self.orch.state.pending_questions = [{"description": "색상 선택"}]
+        # 재귀 run() 방지를 위해 _is_complete를 True로
+        self.orch.state.test_pass_rate = 100.0
+        self.orch.state.lint_errors = 0
+        self.orch.state.type_errors = 0
+        self.orch.state.build_success = True
+        self.orch.project_path = self.orch.project_path.__class__("/tmp")
+
+        mock_run = AsyncMock()
+        with (
+            patch("builtins.input", side_effect=["사용자 피드백", EOFError]),
+            patch.object(self.orch, "run", new=mock_run),
+        ):
+            await self.orch._report_completion()
+
+        self.orch.executor.execute.assert_called_once()
+        mock_run.assert_called_once()
+
+    # ─── main() 엔트리포인트 ─────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_main_no_args_exits(self):
+        """인수 없이 실행하면 sys.exit(1). (lines 302-305)"""
+        from src.orchestrator.main import main
+        with (
+            patch("sys.argv", ["main"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await main()
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_main_file_not_found_exits(self, tmp_path):
+        """존재하지 않는 파일이면 sys.exit(1). (lines 307-310)"""
+        from src.orchestrator.main import main
+        with (
+            patch("sys.argv", ["main", str(tmp_path / "nonexistent.md")]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await main()
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_main_runs_orchestrator(self, tmp_path):
+        """유효한 파일이면 Orchestrator를 생성하고 실행한다. (lines 312-319)"""
+        from src.orchestrator.main import main
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("테스트 스펙")
+
+        with (
+            patch("sys.argv", ["main", str(spec_file)]),
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+            patch.object(
+                AutonomousOrchestrator, "run", new=AsyncMock()
+            ) as mock_run,
+        ):
+            await main()
+
+        mock_run.assert_called_once()
+
     # ─── TokenLimitError ──────────────────────────────────────────────
 
     def test_token_limit_error_is_exception(self):

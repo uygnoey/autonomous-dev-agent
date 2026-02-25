@@ -139,3 +139,23 @@ class TestTokenManager:
             result = await manager._test_api_available()
 
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_reset_retries_when_api_unavailable(self):
+        """API 아직 안 될 때 재귀적으로 다시 대기한다. (line 75)"""
+        manager = TokenManager(wait_seconds=1)
+        call_count = 0
+
+        async def api_available():
+            nonlocal call_count
+            call_count += 1
+            return call_count >= 2  # 첫번째 False, 두번째부터 True
+
+        with (
+            patch("src.orchestrator.token_manager.asyncio.sleep"),
+            patch.object(manager, "_test_api_available", side_effect=api_available),
+        ):
+            await manager.wait_for_reset()
+
+        assert call_count == 2
+        assert manager._consecutive_limits == 0

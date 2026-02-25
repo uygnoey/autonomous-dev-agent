@@ -88,3 +88,25 @@ class TestCodebaseIndexer:
         chunk_str = str(chunk)
         assert chunk.file_path in chunk_str
         assert str(chunk.start_line) in chunk_str
+
+    def test_index_skips_unreadable_file(self, tmp_project: Path):
+        """읽을 수 없는 파일(OSError/UnicodeDecodeError)은 건너뛴다. (lines 64-65)"""
+        from unittest.mock import patch
+
+        indexer = CodebaseIndexer(str(tmp_project))
+        with patch.object(
+            indexer,
+            "_chunk_file",
+            side_effect=OSError("permission denied"),
+        ):
+            count = indexer.index()  # 예외 없이 완료되어야 함
+        assert count == 0  # 청크 없음 (모든 파일이 실패)
+
+    def test_search_auto_indexes_when_chunks_empty(self, tmp_project: Path):
+        """청크가 비어있을 때 search()가 자동으로 index()를 호출한다. (line 81)"""
+        indexer = CodebaseIndexer(str(tmp_project))
+        # index() 없이 바로 search() 호출
+        assert not indexer._chunks  # 청크 비어있음
+        indexer.search("hello")
+        # 자동 인덱싱 후 결과 반환
+        assert indexer._chunks  # 이제 청크가 채워짐

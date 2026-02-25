@@ -125,8 +125,25 @@ class TestIssueClassifier:
         result = classifier._parse_response(text)
         assert len(result) == 1
 
+    def test_parse_response_with_plain_code_block(self, classifier: IssueClassifier):
+        """json 언어 표시 없는 일반 코드 블록(```...```)도 파싱한다. (line 90)"""
+        text = '```\n[{"description": "issue", "level": "critical"}]\n```'
+        result = classifier._parse_response(text)
+        assert len(result) == 1
+        assert result[0]["level"] == "critical"
+
     def test_parse_response_returns_empty_for_non_list(self, classifier: IssueClassifier):
         """응답이 리스트가 아니면 빈 목록을 반환한다."""
         text = '{"description": "issue"}'  # dict, not list
         result = classifier._parse_response(text)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_classify_returns_empty_when_no_issues_after_non_technical(
+        self, classifier: IssueClassifier
+    ):
+        """_is_purely_technical이 False이지만 issues가 비어있으면 빈 목록. (line 49)"""
+        verification = {"issues": []}
+        with patch.object(classifier, "_is_purely_technical", return_value=False):
+            result = await classifier.classify(verification)
         assert result == []
