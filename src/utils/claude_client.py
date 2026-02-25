@@ -10,6 +10,7 @@ ANTHROPIC_API_KEY가 설정되어 있으면 직접 Anthropic API 사용,
     )
 """
 
+import asyncio
 import os
 from collections.abc import Callable
 
@@ -46,7 +47,7 @@ async def call_claude_for_text(
         Claude 응답 텍스트
     """
     if os.environ.get("ANTHROPIC_API_KEY"):
-        return _call_via_api(system, user, model, max_tokens, usage_callback)
+        return await asyncio.to_thread(_call_via_api, system, user, model, max_tokens, usage_callback)
     return await _call_via_sdk(system, user, model)
 
 

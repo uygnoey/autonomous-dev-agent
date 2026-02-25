@@ -70,6 +70,7 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 
 ```bash
 # macOS/Linux에서 원격 설치
+# TODO: USER/REPO를 실제 GitHub username/repository로 교체하세요
 curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
 
 # 또는 wget 사용
@@ -79,6 +80,7 @@ wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | 
 **Git이 이미 있다면:**
 
 ```bash
+# TODO: <repo-url>을 실제 GitHub 저장소 URL로 교체하세요
 git clone <repo-url>
 cd autonomous-dev-agent
 ./scripts/install.sh
@@ -100,6 +102,7 @@ cd autonomous-dev-agent
 **1단계: 의존성 설치**
 
 ```bash
+# TODO: <repo-url>을 실제 GitHub 저장소 URL로 교체하세요
 git clone <repo-url>
 cd autonomous-dev-agent
 uv sync

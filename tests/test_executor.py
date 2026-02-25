@@ -472,3 +472,24 @@ class TestExecuteWithRetry:
 
         errors = [r for r in result if isinstance(r, dict) and "error" in r]
         assert errors
+
+
+# ---------------------------------------------------------------------------
+# 7. AgentExecutor.__init__ 환경변수 분기 테스트
+# ---------------------------------------------------------------------------
+
+class TestAgentExecutorInit:
+    """AgentExecutor 초기화 시 Agent Teams 환경변수 분기 검증."""
+
+    def test_logs_warning_when_agent_teams_disabled(self):
+        """CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS가 '1'이 아닐 때 경고 로그가 발생한다."""
+        import os
+        env = os.environ.copy()
+        env.pop("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", None)
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch("src.agents.executor.logger") as mock_logger:
+                AgentExecutor(project_path="/tmp/test", use_rag=False)
+
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("비활성화" in call for call in warning_calls)

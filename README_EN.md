@@ -48,6 +48,7 @@ The installation script automatically installs:
 
 ```bash
 # Remote installation on macOS/Linux
+# TODO: Replace USER/REPO with actual GitHub username/repository
 curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
 
 # Or using wget
@@ -57,6 +58,7 @@ wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | 
 **If you already have Git:**
 
 ```bash
+# TODO: Replace <repo-url> with actual GitHub repository URL
 git clone <repo-url>
 cd autonomous-dev-agent
 ./scripts/install.sh
@@ -79,6 +81,7 @@ If you prefer manual installation:
 
 ```bash
 # Clone the repository
+# TODO: Replace <repo-url> with actual GitHub repository URL
 git clone <repo-url>
 cd autonomous-dev-agent
 

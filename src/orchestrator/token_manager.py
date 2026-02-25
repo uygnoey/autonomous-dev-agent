@@ -55,29 +55,28 @@ class TokenManager:
         지수 백오프로 대기 시간을 늘린다.
         절대로 포기하지 않고, 리셋될 때까지 계속 대기한다.
         """
-        self._consecutive_limits += 1
-        self._last_rate_limit_at = time.time()
+        while True:
+            self._consecutive_limits += 1
+            self._last_rate_limit_at = time.time()
 
-        # 지수 백오프: 60초 → 120초 → 240초 → 최대 max_wait_seconds
-        wait = min(
-            self._wait_seconds * (2 ** (self._consecutive_limits - 1)),
-            self._max_wait_seconds,
-        )
+            # 지수 백오프: 60초 → 120초 → 240초 → 최대 max_wait_seconds
+            wait = min(
+                self._wait_seconds * (2 ** (self._consecutive_limits - 1)),
+                self._max_wait_seconds,
+            )
 
-        logger.warning(
-            f"토큰 한도 초과 (연속 {self._consecutive_limits}회). "
-            f"{wait}초 대기 후 재시도..."
-        )
-        await asyncio.sleep(wait)
+            logger.warning(
+                f"토큰 한도 초과 (연속 {self._consecutive_limits}회). "
+                f"{wait}초 대기 후 재시도..."
+            )
+            await asyncio.sleep(wait)
 
-        # 대기 후 API 호출 가능한지 테스트
-        if await self._test_api_available():
-            self._consecutive_limits = 0
-            self._last_rate_limit_at = None
-            logger.info("API 사용 가능. 작업 재개.")
-        else:
-            # 아직 안 되면 재귀적으로 다시 대기
-            await self.wait_for_reset()
+            # 대기 후 API 호출 가능한지 테스트
+            if await self._test_api_available():
+                self._consecutive_limits = 0
+                self._last_rate_limit_at = None
+                logger.info("API 사용 가능. 작업 재개.")
+                return
 
     async def _test_api_available(self) -> bool:
         """API가 사용 가능한지 간단히 테스트한다."""

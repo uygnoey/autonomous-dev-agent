@@ -41,6 +41,7 @@ COMPLETION_CRITERIA = {
 }
 
 MAX_ITERATIONS = 500  # 안전장치: 무한 루프 방지
+MAX_FEEDBACK_ROUNDS = 10  # 피드백 반영 재실행 최대 횟수
 
 
 class AutonomousOrchestrator:
@@ -405,7 +406,11 @@ class AutonomousOrchestrator:
                     f"사람의 피드백에 따라 수정하세요:\n{answers}"
                 )
                 self.state.completion_percent = 0
-                await self.run()
+                # 피드백 반영 후 재실행한다.
+                # _feedback_count로 최대 횟수를 제한하여 무한 재귀를 방지한다.
+                self._feedback_count = getattr(self, "_feedback_count", 0) + 1
+                if self._feedback_count <= MAX_FEEDBACK_ROUNDS:
+                    await self.run()
 
     def _save_questions(self) -> None:
         """비크리티컬 질문을 파일에 저장."""

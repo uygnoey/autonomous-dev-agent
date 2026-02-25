@@ -12,7 +12,9 @@ build/
 .ruff_cache/
 .pytest_cache/
 htmlcov/
+.coverage
 pending_questions.json
 node_modules/
 .venv/
 *.DS_Store
+.vscode/
