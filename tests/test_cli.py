@@ -75,7 +75,7 @@ class TestCliMain:
     def test_runs_orchestrator_with_spec_file(self, tmp_path):
         """유효한 스펙 파일이면 Orchestrator를 생성하고 run()을 실행한다."""
         spec_file = tmp_path / "spec.md"
-        spec_file.write_text("테스트 스펙")
+        spec_file.write_text("테스트 스펙", encoding="utf-8")
 
         mock_run = AsyncMock()
         with (
@@ -91,7 +91,7 @@ class TestCliMain:
     def test_uses_cwd_as_project_path_when_one_arg(self, tmp_path):
         """스펙 파일 하나만 전달하면 project_path는 CWD."""
         spec_file = tmp_path / "spec.md"
-        spec_file.write_text("스펙")
+        spec_file.write_text("스펙", encoding="utf-8")
 
         captured = {}
 

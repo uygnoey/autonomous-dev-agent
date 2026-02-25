@@ -47,7 +47,9 @@ async def call_claude_for_text(
         Claude 응답 텍스트
     """
     if os.environ.get("ANTHROPIC_API_KEY"):
-        return await asyncio.to_thread(_call_via_api, system, user, model, max_tokens, usage_callback)
+        return await asyncio.to_thread(
+            _call_via_api, system, user, model, max_tokens, usage_callback,
+        )
     return await _call_via_sdk(system, user, model)
 
 
@@ -71,7 +73,7 @@ def _call_via_api(
     content = response.content[0]
     if not isinstance(content, AnthropicTextBlock):
         raise ValueError(f"예상치 못한 응답 블록 타입: {type(content)}")
-    return content.text
+    return str(content.text)
 
 
 async def _call_via_sdk(system: str, user: str, model: str) -> str:

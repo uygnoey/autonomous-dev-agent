@@ -2,7 +2,7 @@
 
 orchestrator:
   # 판단/계획용 모델 (Claude API)
-  planning_model: "claude-sonnet-4-6"
+  planning_model: "claude-opus-4-6"
   # 이슈 분류용 모델
   classifier_model: "claude-sonnet-4-6"
 

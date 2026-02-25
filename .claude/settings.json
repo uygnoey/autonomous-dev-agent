@@ -3,6 +3,7 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6"
   },
+  "teammateMode": "in-process",
   "permissions": {
     "allow": [
       "Bash(python *)",

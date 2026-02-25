@@ -350,7 +350,7 @@ class AgentExecutor:
         options = ClaudeAgentOptions(
             system_prompt=profile.system_prompt,
             allowed_tools=list(profile.allowed_tools),
-            permission_mode="delegate",  # 완전 자율 실행 (모든 도구 자동 승인)
+            permission_mode="bypassPermissions",  # 완전 자율 실행 (모든 도구 자동 승인)
             cwd=self._project_path,
             max_turns=self._max_turns,
             setting_sources=["project"],
