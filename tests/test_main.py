@@ -425,3 +425,117 @@ class TestAutonomousOrchestrator:
     def test_token_limit_error_is_exception(self):
         with pytest.raises(TokenLimitError):
             raise TokenLimitError("한도 초과")
+
+    # ─── EventBus 연동 ────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_emit_publishes_event_when_bus_set(self):
+        """_emit은 event_bus가 있을 때 이벤트를 발행한다."""
+        from src.utils.events import Event, EventBus, EventType
+
+        bus = EventBus()
+        q = bus.subscribe()
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator("/tmp", "spec", event_bus=bus)
+
+        await orch._emit(EventType.LOG, {"message": "test"})
+        event: Event = await q.get()
+        assert event.type == EventType.LOG
+        assert event.data["message"] == "test"
+
+    @pytest.mark.asyncio
+    async def test_emit_noop_when_bus_is_none(self):
+        """_emit은 event_bus가 None이면 아무것도 하지 않는다."""
+        from src.utils.events import EventType
+
+        # 에러 없이 완료되어야 함
+        await self.orch._emit(EventType.LOG, {"message": "noop"})
+
+    @pytest.mark.asyncio
+    async def test_ask_human_uses_event_bus(self):
+        """event_bus가 있으면 QUESTION 이벤트를 발행하고 답변을 기다린다."""
+        from src.utils.events import EventBus, EventType
+
+        bus = EventBus()
+        q = bus.subscribe()
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator("/tmp", "spec", event_bus=bus)
+        orch.executor = AsyncMock()
+
+        issue = {"description": "스펙 모호", "level": "critical"}
+        # 사용자 답변을 미리 큐에 넣기
+        await bus.put_answer("이메일 로그인 사용")
+        answer = await orch._ask_human(issue)
+
+        # QUESTION 이벤트 발행 확인
+        event = await q.get()
+        assert event.type == EventType.QUESTION
+        assert event.data["issue"] == issue
+        assert answer == "이메일 로그인 사용"
+
+    @pytest.mark.asyncio
+    async def test_ask_human_returns_none_for_empty_answer(self):
+        """빈 답변이면 None을 반환한다."""
+        from src.utils.events import EventBus
+
+        bus = EventBus()
+        bus.subscribe()
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator("/tmp", "spec", event_bus=bus)
+
+        issue = {"description": "모호한 요구사항"}
+        await bus.put_answer("")  # 빈 답변
+        answer = await orch._ask_human(issue)
+        assert answer is None
+
+    @pytest.mark.asyncio
+    async def test_report_completion_emits_completed_event(self):
+        """_report_completion은 COMPLETED 이벤트를 발행한다."""
+        from src.utils.events import EventBus, EventType
+
+        bus = EventBus()
+        q = bus.subscribe()
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator("/tmp", "spec", event_bus=bus)
+        orch.executor = AsyncMock()
+        orch.state.test_pass_rate = 100.0
+        orch.state.lint_errors = 0
+        orch.state.type_errors = 0
+        orch.state.build_success = True
+
+        # 비크리티컬 질문 없으면 wait_for_answer 호출 안 함
+        await orch._report_completion()
+        event = await q.get()
+        assert event.type == EventType.COMPLETED
+        assert event.data["is_complete"] is True
+
+    @pytest.mark.asyncio
+    async def test_report_completion_waits_for_answer_via_event_bus(self):
+        """pending_questions가 있고 event_bus 있으면 bus로 답변을 기다린다. (line 335)"""
+        from src.utils.events import EventBus
+
+        bus = EventBus()
+        bus.subscribe()
+        with (
+            patch("src.orchestrator.main.AgentExecutor"),
+            patch("src.orchestrator.main.Verifier"),
+        ):
+            orch = AutonomousOrchestrator("/tmp", "spec", event_bus=bus)
+        orch.executor = AsyncMock()
+        orch.state.pending_questions = [{"description": "색상 선택", "level": "non_critical"}]
+
+        # "done" 답변 → 수정 루프 없이 종료
+        await bus.put_answer("done")
+        await orch._report_completion()  # 에러 없이 완료되어야 함

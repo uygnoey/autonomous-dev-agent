@@ -19,6 +19,7 @@ from src.agents.verifier import Verifier
 from src.orchestrator.issue_classifier import IssueClassifier, IssueLevel
 from src.orchestrator.planner import Planner
 from src.orchestrator.token_manager import TokenManager
+from src.utils.events import Event, EventBus, EventType
 from src.utils.logger import setup_logger
 from src.utils.state import PhaseType, ProjectState
 
@@ -30,7 +31,6 @@ COMPLETION_CRITERIA = {
     "lint_errors": 0,
     "type_errors": 0,
     "build_success": True,
-    "all_features_implemented": True,
 }
 
 MAX_ITERATIONS = 500  # 안전장치: 무한 루프 방지
@@ -40,11 +40,22 @@ class AutonomousOrchestrator:
     """자율 개발 에이전트 Orchestrator.
 
     Claude API로 판단하고, Claude Agent SDK로 실행하는 상위 에이전트.
+    event_bus가 주입되면 TUI/Web UI와 통신하고,
+    없으면 터미널 input/print로 동작한다.
     """
 
-    def __init__(self, project_path: str, spec: str):
+    def __init__(
+        self,
+        project_path: str,
+        spec: str,
+        event_bus: EventBus | None = None,
+    ):
         self.project_path = Path(project_path)
-        self.state = ProjectState(spec=spec)
+        self.state = ProjectState.load_or_create(
+            self.project_path / ".claude" / "state.json",
+            spec=spec,
+        )
+        self._event_bus = event_bus
         self.planner = Planner()
         self.classifier = IssueClassifier()
         self.token_manager = TokenManager()
@@ -56,6 +67,8 @@ class AutonomousOrchestrator:
         logger.info("=== 자율 개발 에이전트 시작 ===")
         logger.info(f"프로젝트 경로: {self.project_path}")
 
+        await self._emit(EventType.LOG, {"message": "=== 자율 개발 에이전트 시작 ==="})
+
         # Phase 1: 프로젝트 초기 구성
         await self._phase_setup()
 
@@ -65,14 +78,28 @@ class AutonomousOrchestrator:
 
             if self.state.iteration > MAX_ITERATIONS:
                 logger.warning(f"최대 반복 횟수({MAX_ITERATIONS}) 도달. 중간 보고 후 종료.")
+                await self._emit(EventType.LOG, {
+                    "message": f"최대 반복 횟수({MAX_ITERATIONS}) 도달",
+                    "level": "warning",
+                })
                 break
 
-            logger.info(
-                f"\n[Iteration {self.state.iteration}] "
+            progress_msg = (
+                f"[Iteration {self.state.iteration}] "
                 f"완성도: {self.state.completion_percent:.1f}% | "
                 f"테스트: {self.state.test_pass_rate:.1f}% | "
                 f"Phase: {self.state.phase}"
             )
+            logger.info(f"\n{progress_msg}")
+            await self._emit(EventType.PROGRESS, {
+                "iteration": self.state.iteration,
+                "completion_percent": self.state.completion_percent,
+                "test_pass_rate": self.state.test_pass_rate,
+                "lint_errors": self.state.lint_errors,
+                "type_errors": self.state.type_errors,
+                "build_success": self.state.build_success,
+                "phase": str(self.state.phase),
+            })
 
             # 토큰 한도 체크 → 초과 시 리셋될 때까지 대기
             await self.token_manager.wait_if_needed()
@@ -80,6 +107,7 @@ class AutonomousOrchestrator:
             try:
                 # 1) 다음 작업 결정 (Claude API)
                 next_task = await self.planner.decide_next_task(self.state)
+                await self._emit(EventType.LOG, {"message": f"다음 작업: {next_task[:80]}..."})
 
                 # 2) 작업 실행 (Claude Agent SDK)
                 await self.executor.execute(next_task)
@@ -99,12 +127,20 @@ class AutonomousOrchestrator:
             except TokenLimitError:
                 # 토큰 한도 초과 → 대기 후 이어서
                 logger.warning("토큰 한도 초과. 리셋 대기 중...")
+                await self._emit(EventType.LOG, {
+                    "message": "토큰 한도 초과. 리셋 대기 중...",
+                    "level": "warning",
+                })
                 await self.token_manager.wait_for_reset()
                 continue
 
             except Exception as e:
                 # 예상치 못한 에러도 스스로 해결 시도
                 logger.error(f"예상치 못한 에러: {e}")
+                await self._emit(EventType.LOG, {
+                    "message": f"예상치 못한 에러: {e}",
+                    "level": "error",
+                })
                 await self._self_heal(str(e))
 
         # Phase 6: 문서화 (코드 완성 후)
@@ -113,10 +149,16 @@ class AutonomousOrchestrator:
         # Phase 7: 완성 보고
         await self._report_completion()
 
+    async def _emit(self, event_type: EventType, data: dict) -> None:
+        """event_bus가 있을 때만 이벤트를 발행한다."""
+        if self._event_bus is not None:
+            await self._event_bus.publish(Event(type=event_type, data=data))
+
     async def _phase_document(self) -> None:
         """Phase 6: 문서화. 코드 완성 후 documenter 에이전트가 전체 문서를 생성한다."""
         self.state.phase = PhaseType.DOCUMENT
         logger.info("Phase 6: 문서화")
+        await self._emit(EventType.LOG, {"message": "Phase 6: 문서화 시작"})
 
         doc_prompt = """
 프로젝트 코드가 완성되었습니다. 전체 문서를 생성하세요.
@@ -143,6 +185,7 @@ class AutonomousOrchestrator:
         """Phase 1: 프로젝트 초기 구성."""
         self.state.phase = PhaseType.SETUP
         logger.info("Phase 1: 프로젝트 초기 구성")
+        await self._emit(EventType.LOG, {"message": "Phase 1: 프로젝트 초기 구성"})
 
         setup_prompt = f"""
 프로젝트 스펙에 따라 초기 구성을 수행하세요.
@@ -180,7 +223,20 @@ class AutonomousOrchestrator:
                 self.state.pending_questions.append(issue)
 
     async def _ask_human(self, issue: dict) -> str | None:
-        """크리티컬 이슈를 사람에게 질문한다."""
+        """크리티컬 이슈를 사람에게 질문한다.
+
+        event_bus가 있으면 이벤트로 질문하고 답변을 기다린다.
+        없으면 터미널 input()으로 처리한다.
+        """
+        if self._event_bus is not None:
+            await self._event_bus.publish(Event(
+                type=EventType.QUESTION,
+                data={"issue": issue},
+            ))
+            answer = await self._event_bus.wait_for_answer()
+            return answer.strip() if answer.strip() else None
+
+        # CLI 폴백: 터미널 input
         print(f"\n{'='*60}")
         print("🚨 [CRITICAL ISSUE]")
         print(f"   문제: {issue['description']}")
@@ -192,7 +248,6 @@ class AutonomousOrchestrator:
             answer = input("답변 (스킵하려면 Enter): ").strip()
             return answer if answer else None
         except EOFError:
-            # 비대화형 환경에서는 로그에 기록하고 진행
             logger.warning(f"비대화형 환경. 크리티컬 이슈 로그에 기록: {issue}")
             self.state.pending_questions.append(issue)
             return None
@@ -225,12 +280,7 @@ class AutonomousOrchestrator:
         self.state.build_success = verification.get("build_success", False)
 
         # 완성도 추정 (가중 평균)
-        weights = {
-            "test": 40,
-            "lint": 15,
-            "type": 15,
-            "build": 30,
-        }
+        weights = {"test": 40, "lint": 15, "type": 15, "build": 30}
         score: float = 0.0
         score += weights["test"] * (self.state.test_pass_rate / 100)
         score += weights["lint"] * (1 if self.state.lint_errors == 0 else 0)
@@ -252,8 +302,22 @@ class AutonomousOrchestrator:
 
     async def _report_completion(self) -> None:
         """완성 보고 + 비크리티컬 질문 전달."""
+        is_done = self._is_complete()
+        summary = {
+            "is_complete": is_done,
+            "iteration": self.state.iteration,
+            "test_pass_rate": self.state.test_pass_rate,
+            "lint_errors": self.state.lint_errors,
+            "type_errors": self.state.type_errors,
+            "build_success": self.state.build_success,
+            "pending_questions": self.state.pending_questions,
+        }
+
+        await self._emit(EventType.COMPLETED, summary)
+
+        # CLI 출력 (event_bus 여부 무관하게 항상)
         print(f"\n{'='*60}")
-        print(f"✅ 프로젝트 {'완성' if self._is_complete() else '중간 보고'}!")
+        print(f"✅ 프로젝트 {'완성' if is_done else '중간 보고'}!")
         print(f"   총 반복: {self.state.iteration}회")
         print(f"   테스트 통과율: {self.state.test_pass_rate:.1f}%")
         print(f"   린트 에러: {self.state.lint_errors}건")
@@ -266,21 +330,25 @@ class AutonomousOrchestrator:
             for i, q in enumerate(self.state.pending_questions, 1):
                 print(f"   {i}. {q['description']}")
 
-            print()
-            try:
-                answers = input("답변을 JSON으로 입력 (완료면 'done'): ").strip()
-                if answers and answers != "done":
-                    self.state.pending_questions.clear()
-                    # 답변에 따라 수정 루프 재진입
-                    await self.executor.execute(
-                        f"사람의 피드백에 따라 수정하세요:\n{answers}"
-                    )
-                    # 수정 후 다시 검증 루프
-                    self.state.completion_percent = 0  # 리셋
-                    await self.run()
-            except EOFError:
-                logger.info("비대화형 환경. 비크리티컬 질문을 파일에 저장.")
-                self._save_questions()
+            if self._event_bus is not None:
+                # UI에서 답변 대기
+                answers = await self._event_bus.wait_for_answer()
+            else:
+                print()
+                try:
+                    answers = input("답변을 입력 (완료면 'done'): ").strip()
+                except EOFError:
+                    logger.info("비대화형 환경. 비크리티컬 질문을 파일에 저장.")
+                    self._save_questions()
+                    return
+
+            if answers and answers != "done":
+                self.state.pending_questions.clear()
+                await self.executor.execute(
+                    f"사람의 피드백에 따라 수정하세요:\n{answers}"
+                )
+                self.state.completion_percent = 0
+                await self.run()
 
     def _save_questions(self) -> None:
         """비크리티컬 질문을 파일에 저장."""
@@ -292,11 +360,12 @@ class AutonomousOrchestrator:
 
 class TokenLimitError(Exception):
     """토큰 한도 초과 에러."""
+
     pass
 
 
-async def main():
-    """엔트리 포인트."""
+async def main() -> None:
+    """CLI 엔트리 포인트. spec 파일을 인수로 받아 자율 개발을 시작한다."""
     import sys
 
     if len(sys.argv) < 2:
