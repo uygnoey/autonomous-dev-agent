@@ -59,7 +59,25 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
 - Anthropic API 키 또는 Claude Code 세션 (`claude` CLI 인증)
 
-### 1단계: 의존성 설치
+### 원클릭 설치 (권장)
+
+```bash
+git clone <repo-url>
+cd autonomous-dev-agent
+./scripts/install.sh
+```
+
+설치 스크립트가 자동으로:
+- ✅ Python 3.12 이상 확인
+- ✅ uv 패키지 매니저 설치
+- ✅ 가상환경 생성
+- ✅ 의존성 설치
+- ✅ .env 파일 생성
+- ✅ 설치 검증 및 테스트 실행
+
+### 수동 설치
+
+**1단계: 의존성 설치**
 
 ```bash
 git clone <repo-url>
@@ -73,7 +91,7 @@ RAG 벡터 검색 기능도 함께 설치하려면:
 uv sync --extra rag
 ```
 
-### 2단계: 환경 변수 설정
+**2단계: 환경 변수 설정**
 
 ```bash
 cp .env.example .env
@@ -87,33 +105,40 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 
 `ANTHROPIC_API_KEY`가 없으면 Claude Code 세션(claude CLI subscription)을 자동으로 사용합니다.
 
-### 3단계: TUI 실행
-
-스펙 대화부터 시작하는 경우:
+**3단계: CLI 명령어 설치**
 
 ```bash
-python -m src.ui.tui
+uv pip install -e .
 ```
 
-프로젝트 경로를 지정하는 경우:
+이제 `adev` 또는 `autonomous-dev` 명령어를 사용할 수 있습니다!
+
+### 실행
+
+**간단한 방법 (권장):**
 
 ```bash
-python -m src.ui.tui /path/to/project
+# TUI 모드 실행 (스펙 대화부터 시작)
+adev
+
+# 프로젝트 경로 지정
+adev /path/to/project
+
+# 스펙 파일로 바로 시작
+adev /path/to/project spec.md
 ```
 
-이미 작성된 스펙 파일이 있는 경우 (대화 없이 바로 개발 시작):
+**또는 전체 경로:**
 
 ```bash
-python -m src.ui.tui /path/to/project spec.md
+# TUI 모드
+uv run python -m src.ui.tui
+
+# CLI 모드 (TUI 없이)
+uv run python -m src.orchestrator.main spec.md
 ```
 
-### 4단계: CLI 실행 (TUI 없이)
-
-```bash
-python -m src.orchestrator.main spec.md
-```
-
-`spec.md` 파일이 현재 디렉토리에 있어야 합니다. 에이전트가 완성 조건(테스트 100%, 린트 0, 타입 에러 0, 빌드 성공)을 달성할 때까지 자율 반복합니다.
+에이전트가 완성 조건(테스트 100%, 린트 0, 타입 에러 0, 빌드 성공)을 달성할 때까지 자율 반복합니다.
 
 ---
 
@@ -121,16 +146,35 @@ python -m src.orchestrator.main spec.md
 
 ### TUI 실행 옵션
 
+**간단한 명령어 (권장):**
+
 | 명령어 | 동작 |
 |--------|------|
-| `python -m src.ui.tui` | 현재 디렉토리, 스펙 대화부터 |
-| `python -m src.ui.tui /path/to/project` | 지정 경로, 스펙 대화부터 |
-| `python -m src.ui.tui /path/to/project spec.md` | 스펙 파일 있으면 바로 개발 시작 |
+| `adev` | 현재 디렉토리, 스펙 대화부터 |
+| `adev /path/to/project` | 지정 경로, 스펙 대화부터 |
+| `adev /path/to/project spec.md` | 스펙 파일 있으면 바로 개발 시작 |
+| `autonomous-dev` | `adev`와 동일 (전체 이름) |
 
-### CLI 실행 옵션
+**전체 경로:**
+
+| 명령어 | 동작 |
+|--------|------|
+| `uv run python -m src.ui.tui` | 현재 디렉토리, 스펙 대화부터 |
+| `uv run python -m src.ui.tui /path/to/project` | 지정 경로, 스펙 대화부터 |
+| `uv run python -m src.ui.tui /path/to/project spec.md` | 스펙 파일 있으면 바로 개발 시작 |
+
+### CLI 실행 옵션 (고급)
+
+**TUI 없이 Orchestrator만 직접 실행:**
 
 ```bash
-python -m src.orchestrator.main <spec_file>
+uv run python -m src.orchestrator.main <spec_file>
+```
+
+**재시작 루프 포함 (토큰 한도 대기 자동):**
+
+```bash
+./scripts/run.sh spec.md
 ```
 
 `spec_file`: 확정된 스펙이 담긴 텍스트 파일 경로.

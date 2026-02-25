@@ -44,7 +44,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     anthropic_api_key: str
     default_model: str = "claude-opus-4-6"
-    subagent_model: str = "claude-sonnet-4-6-2020217"
+    subagent_model: str = "claude-sonnet-4-6"
     max_iterations: int = 500
     max_turns_per_task: int = 100
     token_wait_seconds: int = 60

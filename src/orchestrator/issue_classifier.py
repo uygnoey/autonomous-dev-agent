@@ -26,7 +26,7 @@ class IssueLevel(StrEnum):
 class IssueClassifier:
     """Claude로 이슈를 분류하는 분류기."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6-20260217"):
+    def __init__(self, model: str = "claude-sonnet-4-6"):
         self._model = model
 
     async def classify(self, verification: dict) -> list[dict]:

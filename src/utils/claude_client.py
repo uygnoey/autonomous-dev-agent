@@ -25,7 +25,7 @@ logger = setup_logger(__name__)
 async def call_claude_for_text(
     system: str,
     user: str,
-    model: str = "claude-sonnet-4-6-20260217",
+    model: str = "claude-sonnet-4-6",
     max_tokens: int = 4096,
 ) -> str:
     """Claude에 텍스트 쿼리를 보내고 응답 텍스트를 반환한다.

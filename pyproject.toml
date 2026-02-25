@@ -17,6 +17,10 @@ dependencies = [
     "python-multipart>=0.0.12",
 ]
 
+[project.scripts]
+adev = "src.cli:main"
+autonomous-dev = "src.cli:main"
+
 [project.optional-dependencies]
 rag = [
     "chromadb>=0.5.0",

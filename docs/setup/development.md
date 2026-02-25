@@ -71,7 +71,24 @@ cd autonomous-dev-agent
 
 ---
 
-## 의존성 설치
+## 빠른 설치 (권장)
+
+**원클릭 설치 스크립트 사용:**
+
+```bash
+./scripts/install.sh
+```
+
+이 스크립트는 다음을 자동으로 수행합니다:
+1. Python 3.12 이상 확인
+2. uv 패키지 매니저 설치
+3. 가상환경 생성
+4. 의존성 설치
+5. .env 파일 생성
+6. Claude Code 확인 (선택)
+7. 설치 검증 및 테스트 실행
+
+**또는 수동 설치:**
 
 ```bash
 uv sync
@@ -191,16 +208,34 @@ warn_unused_configs = true
 ignore_missing_imports = true
 ```
 
-### TUI 실행
+### TUI 실행 (권장)
+
+**간단한 명령어로 실행:**
 
 ```bash
-# 현재 디렉토리, 스펙 대화부터 시작
+# 기본 실행 (현재 디렉토리, 스펙 대화부터 시작)
+adev
+
+# 또는 전체 이름 사용
+autonomous-dev
+
+# 프로젝트 경로 지정
+adev /path/to/project
+
+# 스펙 파일 있으면 바로 개발 시작
+adev /path/to/project spec.md
+```
+
+**또는 전체 경로로 실행:**
+
+```bash
+# uv run 사용
 uv run python -m src.ui.tui
 
 # 프로젝트 경로 지정
 uv run python -m src.ui.tui /path/to/project
 
-# 스펙 파일 있으면 바로 개발 시작
+# 스펙 파일 지정
 uv run python -m src.ui.tui /path/to/project spec.md
 ```
 
@@ -209,10 +244,18 @@ TUI는 두 개의 화면으로 구성됩니다.
 - **SpecScreen**: Claude와 대화하며 스펙을 확정합니다. `SPEC_CONFIRMED` 태그가 포함된 응답이 나오면 `spec.md`에 저장하고 DevScreen으로 전환합니다.
 - **DevScreen**: 진행 상황 패널(완성도, 테스트율, 린트/타입 에러, 빌드 상태)과 실시간 로그, 크리티컬 이슈 답변 입력란을 표시합니다.
 
-### CLI 실행
+### CLI 실행 (고급)
+
+TUI 없이 Orchestrator만 직접 실행하려면:
 
 ```bash
 uv run python -m src.orchestrator.main spec.md
+```
+
+또는 재시작 루프를 포함한 실행 스크립트 사용:
+
+```bash
+./scripts/run.sh spec.md
 ```
 
 ### 전체 품질 검사 (테스트 + 린트 + 타입 체크 순서)

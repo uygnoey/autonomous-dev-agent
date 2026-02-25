@@ -14,7 +14,7 @@ logger = setup_logger(__name__)
 class Planner:
     """Claude로 다음 작업을 결정하는 계획 수립기."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6-20260217"):
+    def __init__(self, model: str = "claude-sonnet-4-6"):
         self._model = model
 
     async def decide_next_task(self, state: ProjectState) -> str:

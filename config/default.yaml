@@ -2,9 +2,9 @@
 
 orchestrator:
   # 판단/계획용 모델 (Claude API)
-  planning_model: "claude-sonnet-4-6-20260217"
+  planning_model: "claude-sonnet-4-6"
   # 이슈 분류용 모델
-  classifier_model: "claude-sonnet-4-6-20260217"
+  classifier_model: "claude-sonnet-4-6"
 
 agent:
   # 코드 실행용 모델 (Agent SDK)
@@ -26,4 +26,4 @@ quality:
   test_pass_rate: 100
   lint_errors: 0
   type_errors: 0
-  coverage_min: 90
+  coverage_min: 100
