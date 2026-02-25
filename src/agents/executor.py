@@ -4,7 +4,7 @@ Claude Code의 Agent SDK를 사용하여 실제 코딩 작업을 수행한다.
 파일 읽기/쓰기, 테스트 실행, 빌드 등을 자율적으로 처리한다.
 """
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock, ResultMessage
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
 
 from src.rag.mcp_server import build_rag_mcp_server
 from src.utils.logger import setup_logger
@@ -73,7 +73,7 @@ class AgentExecutor:
         if self._model:
             options.model = self._model
 
-        results = []
+        results: list = []
         try:
             async for message in query(prompt=full_prompt, options=options):
                 results.append(message)

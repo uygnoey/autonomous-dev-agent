@@ -5,9 +5,10 @@ Claude API를 사용하여 현재 프로젝트 상태를 분석하고
 """
 
 import anthropic
+from anthropic.types import TextBlock
 
-from src.utils.state import ProjectState
 from src.utils.logger import setup_logger
+from src.utils.state import ProjectState
 
 logger = setup_logger(__name__)
 
@@ -38,7 +39,10 @@ class Planner:
             }],
         )
 
-        task_prompt = response.content[0].text
+        content = response.content[0]
+        if not isinstance(content, TextBlock):
+            raise ValueError(f"예상치 못한 응답 블록 타입: {type(content)}")
+        task_prompt = content.text
         logger.info(f"다음 작업 결정: {task_prompt[:100]}...")
         return task_prompt
 

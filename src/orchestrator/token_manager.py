@@ -78,7 +78,7 @@ class TokenManager:
         """API가 사용 가능한지 간단히 테스트한다."""
         try:
             client = anthropic.Anthropic()
-            response = client.messages.create(
+            client.messages.create(
                 model="claude-haiku-4-5-20251001",  # 가장 저렴한 모델로 테스트
                 max_tokens=10,
                 messages=[{"role": "user", "content": "ping"}],

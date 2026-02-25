@@ -5,13 +5,13 @@
 """
 
 import json
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import StrEnum
+from pathlib import Path
 
 
-class PhaseType(str, Enum):
+class PhaseType(StrEnum):
     INIT = "init"
     SETUP = "setup"
     BUILD = "build"

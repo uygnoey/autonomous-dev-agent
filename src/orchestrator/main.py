@@ -12,17 +12,15 @@
 
 import asyncio
 import json
-import logging
-from datetime import datetime
 from pathlib import Path
 
-from src.orchestrator.planner import Planner
-from src.orchestrator.issue_classifier import IssueClassifier, IssueLevel
-from src.orchestrator.token_manager import TokenManager
 from src.agents.executor import AgentExecutor
 from src.agents.verifier import Verifier
-from src.utils.state import ProjectState, PhaseType
+from src.orchestrator.issue_classifier import IssueClassifier, IssueLevel
+from src.orchestrator.planner import Planner
+from src.orchestrator.token_manager import TokenManager
 from src.utils.logger import setup_logger
+from src.utils.state import PhaseType, ProjectState
 
 logger = setup_logger(__name__)
 
@@ -40,7 +38,7 @@ MAX_ITERATIONS = 500  # 안전장치: 무한 루프 방지
 
 class AutonomousOrchestrator:
     """자율 개발 에이전트 Orchestrator.
-    
+
     Claude API로 판단하고, Claude Agent SDK로 실행하는 상위 에이전트.
     """
 
@@ -84,7 +82,7 @@ class AutonomousOrchestrator:
                 next_task = await self.planner.decide_next_task(self.state)
 
                 # 2) 작업 실행 (Claude Agent SDK)
-                result = await self.executor.execute(next_task)
+                await self.executor.execute(next_task)
 
                 # 3) 결과 검증 (Claude Agent SDK)
                 verification = await self.verifier.verify_all()
@@ -184,7 +182,7 @@ class AutonomousOrchestrator:
     async def _ask_human(self, issue: dict) -> str | None:
         """크리티컬 이슈를 사람에게 질문한다."""
         print(f"\n{'='*60}")
-        print(f"🚨 [CRITICAL ISSUE]")
+        print("🚨 [CRITICAL ISSUE]")
         print(f"   문제: {issue['description']}")
         if issue.get("suggestion"):
             print(f"   제안: {issue['suggestion']}")
@@ -233,7 +231,7 @@ class AutonomousOrchestrator:
             "type": 15,
             "build": 30,
         }
-        score = 0
+        score: float = 0.0
         score += weights["test"] * (self.state.test_pass_rate / 100)
         score += weights["lint"] * (1 if self.state.lint_errors == 0 else 0)
         score += weights["type"] * (1 if self.state.type_errors == 0 else 0)

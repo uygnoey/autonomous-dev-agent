@@ -9,16 +9,18 @@ Claude API를 사용하여 이슈를 크리티컬/비크리티컬로 분류한�
 - 빌드 실패, 테스트 실패, 린트 에러, 타입 에러, 의존성 충돌, 런타임 에러
 """
 
-from enum import Enum
+import json
+from enum import StrEnum
 
 import anthropic
+from anthropic.types import TextBlock
 
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-class IssueLevel(str, Enum):
+class IssueLevel(StrEnum):
     CRITICAL = "critical"
     NON_CRITICAL = "non_critical"
 
@@ -59,7 +61,11 @@ class IssueClassifier:
             }],
         )
 
-        return self._parse_response(response.content[0].text)
+        content = response.content[0]
+        if not isinstance(content, TextBlock):
+            logger.warning("예상치 못한 응답 블록 타입. 빈 목록 반환.")
+            return []
+        return self._parse_response(content.text)
 
     def _is_purely_technical(self, verification: dict) -> bool:
         """순수 기술적 이슈(에이전트가 해결 가능)만 있는지 확인."""
@@ -88,8 +94,6 @@ class IssueClassifier:
 
     def _parse_response(self, text: str) -> list[dict]:
         """Claude API 응답을 파싱한다."""
-        import json
-
         try:
             # JSON 블록 추출
             if "```json" in text:

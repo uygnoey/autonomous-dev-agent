@@ -4,7 +4,7 @@ Claude Agent SDK를 사용하여 테스트, 린트, 타입체크, 빌드를 실�
 결과를 구조화된 형태로 반환한다.
 """
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock, query
 
 from src.utils.logger import setup_logger
 
