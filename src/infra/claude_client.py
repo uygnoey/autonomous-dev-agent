@@ -1,0 +1,163 @@
+"""Claude 텍스트 쿼리 헬퍼 (인프라 계층).
+
+ANTHROPIC_API_KEY가 설정되어 있으면 직접 Anthropic API 사용,
+없으면 Claude Code 세션(claude init / subscription)을 통해 사용한다.
+
+기존 src/utils/claude_client.py 대비 개선사항:
+- retry_with_backoff 데코레이터 (최대 3회 재시도, 지수 백오프)
+- subscription 모드에서도 usage 추적 시도
+"""
+
+from __future__ import annotations
+
+import asyncio
+import functools
+import os
+from collections.abc import Callable
+from typing import Any, TypeVar
+
+import anthropic
+from anthropic.types import TextBlock as AnthropicTextBlock
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, query
+from claude_agent_sdk import TextBlock as SDKTextBlock
+
+from src.infra.logger import setup_logger
+
+logger = setup_logger(__name__)
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+_MAX_RETRIES = 3
+_BASE_DELAY = 1.0  # 초
+
+
+def retry_with_backoff(
+    max_retries: int = _MAX_RETRIES,
+    base_delay: float = _BASE_DELAY,
+) -> Callable[[_F], _F]:
+    """지수 백오프 재시도 데코레이터.
+
+    대상 코루틴이 예외를 던지면 최대 max_retries 회 재시도한다.
+    대기 시간: base_delay * 2^attempt 초.
+
+    Args:
+        max_retries: 최대 재시도 횟수
+        base_delay: 첫 번째 재시도 전 대기 시간(초)
+
+    Returns:
+        래핑된 코루틴 함수
+    """
+    def decorator(func: _F) -> _F:
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            last_exc: Exception | None = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt == max_retries:
+                        break
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        "재시도 %d/%d — %s (%.1fs 후)",
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+            raise last_exc  # type: ignore[misc]
+        return wrapper  # type: ignore[return-value]
+    return decorator
+
+
+@retry_with_backoff()
+async def call_claude_for_text(
+    system: str,
+    user: str,
+    model: str = "claude-sonnet-4-6",
+    max_tokens: int = 4096,
+    usage_callback: Callable[[int, int], None] | None = None,
+) -> str:
+    """Claude에 텍스트 쿼리를 보내고 응답 텍스트를 반환한다.
+
+    ANTHROPIC_API_KEY가 있으면 직접 Anthropic API 사용,
+    없으면 Claude Code 세션(subscription)을 통해 사용한다.
+
+    Args:
+        system: 시스템 프롬프트
+        user: 사용자 메시지
+        model: 사용할 모델 ID
+        max_tokens: 최대 출력 토큰 수 (API 모드에서만 사용)
+        usage_callback: 토큰 사용량 콜백 (input_tokens, output_tokens)
+
+    Returns:
+        Claude 응답 텍스트
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return await asyncio.to_thread(
+            _call_via_api, system, user, model, max_tokens, usage_callback,
+        )
+    return await _call_via_sdk(system, user, model, usage_callback)
+
+
+def _call_via_api(
+    system: str,
+    user: str,
+    model: str,
+    max_tokens: int,
+    usage_callback: Callable[[int, int], None] | None = None,
+) -> str:
+    """Anthropic API 키로 직접 호출한다."""
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    if usage_callback is not None:
+        usage_callback(response.usage.input_tokens, response.usage.output_tokens)
+    content = response.content[0]
+    if not isinstance(content, AnthropicTextBlock):
+        raise ValueError(f"예상치 못한 응답 블록 타입: {type(content)}")
+    return str(content.text)
+
+
+async def _call_via_sdk(
+    system: str,
+    user: str,
+    model: str,
+    usage_callback: Callable[[int, int], None] | None = None,
+) -> str:
+    """Claude Code 세션(subscription)으로 호출한다.
+
+    claude init으로 인증된 세션을 활용하여 API 키 없이도 동작한다.
+    usage_callback이 제공된 경우 텍스트 길이로 토큰을 추정하여 전달한다.
+    """
+    options = ClaudeAgentOptions(
+        system_prompt=system,
+        allowed_tools=[],
+        permission_mode="acceptEdits",
+        max_turns=1,
+    )
+    options.model = model
+
+    result_text = ""
+    async for message in query(prompt=user, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, SDKTextBlock):
+                    result_text += block.text
+
+    if not result_text:
+        logger.warning("Claude SDK 응답에서 텍스트를 찾지 못했습니다.")
+
+    if usage_callback is not None:
+        # subscription 모드는 실제 usage를 노출하지 않으므로 길이로 추정
+        approx_input = len(system.split()) + len(user.split())
+        approx_output = len(result_text.split())
+        usage_callback(approx_input, approx_output)
+
+    return result_text

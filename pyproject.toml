@@ -1,6 +1,6 @@
 [project]
 name = "autonomous-dev-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Claude Code Skills + RAG 연동 자율 개발 에이전트"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,6 +12,10 @@ dependencies = [
     "pyyaml>=6.0",
     "textual>=0.80.0",
     "python-dotenv>=1.0.0",
+    "aiosqlite>=0.20.0",
+    "rank-bm25>=0.2.2",
+    "structlog>=24.0",
+    "numpy>=1.26.0",
 ]
 
 [project.scripts]
@@ -19,7 +23,19 @@ adev = "src.cli:main"
 autonomous-dev = "src.cli:main"
 
 [project.optional-dependencies]
+rag = [
+    "lancedb>=0.6.0",
+]
 dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+    "pytest-benchmark>=4.0",
+]
+dev-lite = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
@@ -44,6 +60,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 [tool.coverage.run]
 omit = []
