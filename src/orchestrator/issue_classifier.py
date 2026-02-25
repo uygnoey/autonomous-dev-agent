@@ -9,11 +9,17 @@ Claude API 또는 Claude Code 세션을 사용하여 이슈를 크리티컬/비�
 - 빌드 실패, 테스트 실패, 린트 에러, 타입 에러, 의존성 충돌, 런타임 에러
 """
 
+from __future__ import annotations
+
 import json
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from src.utils.claude_client import call_claude_for_text
 from src.utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.orchestrator.token_manager import TokenManager
 
 logger = setup_logger(__name__)
 
@@ -26,8 +32,13 @@ class IssueLevel(StrEnum):
 class IssueClassifier:
     """Claude로 이슈를 분류하는 분류기."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6"):
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-6",
+        token_manager: TokenManager | None = None,
+    ):
         self._model = model
+        self._token_manager = token_manager
 
     async def classify(self, verification: dict) -> list[dict]:
         """검증 결과에서 이슈를 추출하고 분류한다.
@@ -48,10 +59,12 @@ class IssueClassifier:
         if not issues_text:
             return []
 
+        callback = self._token_manager.record_usage if self._token_manager else None
         response_text = await call_claude_for_text(
             system=CLASSIFIER_SYSTEM_PROMPT,
             user=f"검증 결과의 이슈 목록:\n{issues_text}",
             model=self._model,
+            usage_callback=callback,
         )
         return self._parse_response(response_text)
 

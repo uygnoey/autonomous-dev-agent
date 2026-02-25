@@ -341,13 +341,13 @@ class TestAutonomousOrchestrator:
 
     @pytest.mark.asyncio
     async def test_run_breaks_on_max_iterations(self):
-        """MAX_ITERATIONS 초과 시 루프를 탈출하고 보고한다. (lines 67-68)"""
+        """_max_iterations 초과 시 루프를 탈출하고 보고한다."""
+        self.orch._max_iterations = 0
         with (
             patch.object(self.orch, "_phase_setup", new=AsyncMock()),
             patch.object(self.orch, "_phase_document", new=AsyncMock()),
             patch.object(self.orch, "_report_completion", new=AsyncMock()),
             patch.object(self.orch, "_is_complete", return_value=False),
-            patch("src.orchestrator.main.MAX_ITERATIONS", 0),
         ):
             await self.orch.run()
 

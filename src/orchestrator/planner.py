@@ -4,9 +4,16 @@ Claude API 또는 Claude Code 세션을 사용하여 현재 프로젝트 상태�
 다음에 수행할 작업을 결정한다.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from src.utils.claude_client import call_claude_for_text
 from src.utils.logger import setup_logger
 from src.utils.state import ProjectState
+
+if TYPE_CHECKING:
+    from src.orchestrator.token_manager import TokenManager
 
 logger = setup_logger(__name__)
 
@@ -14,8 +21,13 @@ logger = setup_logger(__name__)
 class Planner:
     """Claude로 다음 작업을 결정하는 계획 수립기."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6"):
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-6",
+        token_manager: TokenManager | None = None,
+    ):
         self._model = model
+        self._token_manager = token_manager
 
     async def decide_next_task(self, state: ProjectState) -> str:
         """현재 상태를 기반으로 다음 작업 프롬프트를 생성한다.
@@ -26,10 +38,12 @@ class Planner:
         Returns:
             Claude Agent SDK가 실행할 구체적 프롬프트 문자열
         """
+        callback = self._token_manager.record_usage if self._token_manager else None
         task_prompt = await call_claude_for_text(
             system=PLANNER_SYSTEM_PROMPT,
             user=self._build_context(state),
             model=self._model,
+            usage_callback=callback,
         )
         logger.info(f"다음 작업 결정: {task_prompt[:100]}...")
         return task_prompt

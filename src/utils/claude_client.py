@@ -11,6 +11,7 @@ ANTHROPIC_API_KEY가 설정되어 있으면 직접 Anthropic API 사용,
 """
 
 import os
+from collections.abc import Callable
 
 import anthropic
 from anthropic.types import TextBlock as AnthropicTextBlock
@@ -27,6 +28,7 @@ async def call_claude_for_text(
     user: str,
     model: str = "claude-sonnet-4-6",
     max_tokens: int = 4096,
+    usage_callback: Callable[[int, int], None] | None = None,
 ) -> str:
     """Claude에 텍스트 쿼리를 보내고 응답 텍스트를 반환한다.
 
@@ -38,16 +40,23 @@ async def call_claude_for_text(
         user: 사용자 메시지
         model: 사용할 모델 ID
         max_tokens: 최대 출력 토큰 수 (API 모드에서만 사용)
+        usage_callback: 토큰 사용량 콜백 (input_tokens, output_tokens). API 모드에서만 호출됨.
 
     Returns:
         Claude 응답 텍스트
     """
     if os.environ.get("ANTHROPIC_API_KEY"):
-        return _call_via_api(system, user, model, max_tokens)
+        return _call_via_api(system, user, model, max_tokens, usage_callback)
     return await _call_via_sdk(system, user, model)
 
 
-def _call_via_api(system: str, user: str, model: str, max_tokens: int) -> str:
+def _call_via_api(
+    system: str,
+    user: str,
+    model: str,
+    max_tokens: int,
+    usage_callback: Callable[[int, int], None] | None = None,
+) -> str:
     """Anthropic API 키로 직접 호출한다."""
     client = anthropic.Anthropic()
     response = client.messages.create(
@@ -56,6 +65,8 @@ def _call_via_api(system: str, user: str, model: str, max_tokens: int) -> str:
         system=system,
         messages=[{"role": "user", "content": user}],
     )
+    if usage_callback is not None:
+        usage_callback(response.usage.input_tokens, response.usage.output_tokens)
     content = response.content[0]
     if not isinstance(content, AnthropicTextBlock):
         raise ValueError(f"예상치 못한 응답 블록 타입: {type(content)}")

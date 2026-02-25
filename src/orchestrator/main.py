@@ -19,6 +19,7 @@ from src.agents.verifier import Verifier
 from src.orchestrator.issue_classifier import IssueClassifier, IssueLevel
 from src.orchestrator.planner import Planner
 from src.orchestrator.token_manager import TokenManager
+from src.utils.config import load_config
 from src.utils.events import Event, EventBus, EventType
 from src.utils.logger import setup_logger
 from src.utils.state import PhaseType, ProjectState
@@ -56,9 +57,24 @@ class AutonomousOrchestrator:
             spec=spec,
         )
         self._event_bus = event_bus
-        self.planner = Planner()
-        self.classifier = IssueClassifier()
-        self.token_manager = TokenManager()
+
+        config = load_config()
+        self._max_iterations = config.max_iterations
+        self._completion_criteria = {
+            "test_pass_rate": config.test_pass_rate,
+            "lint_errors": config.lint_errors,
+            "type_errors": config.type_errors,
+            "build_success": True,
+        }
+
+        self.token_manager = TokenManager(
+            wait_seconds=config.initial_wait_seconds,
+            max_wait_seconds=config.max_wait_seconds,
+        )
+        self.planner = Planner(model=config.planning_model, token_manager=self.token_manager)
+        self.classifier = IssueClassifier(
+            model=config.classifier_model, token_manager=self.token_manager
+        )
         self.executor = AgentExecutor(project_path)
         self.verifier = Verifier(project_path)
 
@@ -76,10 +92,10 @@ class AutonomousOrchestrator:
         while not self._is_complete():
             self.state.iteration += 1
 
-            if self.state.iteration > MAX_ITERATIONS:
-                logger.warning(f"최대 반복 횟수({MAX_ITERATIONS}) 도달. 중간 보고 후 종료.")
+            if self.state.iteration > self._max_iterations:
+                logger.warning(f"최대 반복 횟수({self._max_iterations}) 도달. 중간 보고 후 종료.")
                 await self._emit(EventType.LOG, {
-                    "message": f"최대 반복 횟수({MAX_ITERATIONS}) 도달",
+                    "message": f"최대 반복 횟수({self._max_iterations}) 도달",
                     "level": "warning",
                 })
                 break
@@ -329,10 +345,10 @@ class AutonomousOrchestrator:
     def _is_complete(self) -> bool:
         """완성 여부를 판단한다."""
         return (
-            self.state.test_pass_rate >= COMPLETION_CRITERIA["test_pass_rate"]
-            and self.state.lint_errors <= COMPLETION_CRITERIA["lint_errors"]
-            and self.state.type_errors <= COMPLETION_CRITERIA["type_errors"]
-            and self.state.build_success == COMPLETION_CRITERIA["build_success"]
+            self.state.test_pass_rate >= self._completion_criteria["test_pass_rate"]
+            and self.state.lint_errors <= self._completion_criteria["lint_errors"]
+            and self.state.type_errors <= self._completion_criteria["type_errors"]
+            and self.state.build_success == self._completion_criteria["build_success"]
         )
 
     async def _report_completion(self) -> None:

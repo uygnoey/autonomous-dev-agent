@@ -21,8 +21,13 @@ MAX_WAIT_SECONDS = 300  # 최대 5분
 class TokenManager:
     """토큰 사용량을 추적하고 한도 초과 시 대기한다."""
 
-    def __init__(self, wait_seconds: int = DEFAULT_WAIT_SECONDS):
+    def __init__(
+        self,
+        wait_seconds: int = DEFAULT_WAIT_SECONDS,
+        max_wait_seconds: int = MAX_WAIT_SECONDS,
+    ):
         self._wait_seconds = wait_seconds
+        self._max_wait_seconds = max_wait_seconds
         self._total_input_tokens = 0
         self._total_output_tokens = 0
         self._last_rate_limit_at: float | None = None
@@ -53,10 +58,10 @@ class TokenManager:
         self._consecutive_limits += 1
         self._last_rate_limit_at = time.time()
 
-        # 지수 백오프: 60초 → 120초 → 240초 → 최대 300초
+        # 지수 백오프: 60초 → 120초 → 240초 → 최대 max_wait_seconds
         wait = min(
             self._wait_seconds * (2 ** (self._consecutive_limits - 1)),
-            MAX_WAIT_SECONDS,
+            self._max_wait_seconds,
         )
 
         logger.warning(

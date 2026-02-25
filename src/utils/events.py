@@ -54,9 +54,8 @@ class EventBus:
 
     def unsubscribe(self, q: asyncio.Queue[Event]) -> None:
         """구독을 해제한다."""
-        self._subscriber_queues.discard(q) if hasattr(
-            self._subscriber_queues, "discard"
-        ) else (self._subscriber_queues.remove(q) if q in self._subscriber_queues else None)
+        if q in self._subscriber_queues:
+            self._subscriber_queues.remove(q)
 
     async def publish(self, event: Event) -> None:
         """모든 구독자에게 이벤트를 발행한다.
