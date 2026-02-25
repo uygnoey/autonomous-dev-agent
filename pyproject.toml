@@ -45,9 +45,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.coverage.run]
-omit = [
-    "src/ui/*",      # TUI는 Textual 프레임워크 실행 필요 → 단위 테스트 제외
-]
+omit = []
 
 [build-system]
 requires = ["setuptools>=68.0"]
