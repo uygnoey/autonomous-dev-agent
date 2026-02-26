@@ -112,81 +112,81 @@
 
 > 현재: indexer.py에서 50줄 고정 크기로 분할 → 함수/클래스 경계 무시
 
-- [ ] `ASTChunker` 클래스 구현 (ChunkerProtocol 구현체)
-- [ ] Python 파일 처리:
-  - [ ] `ast` built-in으로 `FunctionDef`, `AsyncFunctionDef`, `ClassDef` 노드 추출
-  - [ ] 노드별 시작/끝 라인 추출 → CodeChunk 생성
-  - [ ] 클래스 내부 메서드: 클래스 청크 + 개별 메서드 청크 모두 생성
-  - [ ] 데코레이터 포함: `@decorator` 라인부터 함수 끝까지
-  - [ ] 모듈 레벨 코드: 함수/클래스에 속하지 않는 코드 → "module" 타입 청크
-- [ ] 비Python 파일 처리:
-  - [ ] `.js`, `.ts`, `.yaml`, `.md` 등 → 고정 크기(50줄) 폴백
-  - [ ] 줄 수 기반 오버랩 (10줄) 적용
-- [ ] 크기 제한:
-  - [ ] `MIN_LINES=5`: 5줄 미만 함수 → 모듈 청크에 포함
-  - [ ] `MAX_LINES=100`: 100줄 초과 → 서브 청킹 (메서드별 분리)
-- [ ] `CodeChunk` 확장 필드 활용:
-  - [ ] `chunk_type`: "function" | "class" | "method" | "module" | "block"
-  - [ ] `name`: 함수명/클래스명 (검색용)
-- [ ] 에러 처리: 파싱 실패 시 고정 크기 폴백 (SyntaxError 등)
-- [ ] 테스트: `tests/test_chunker.py`
-  - [ ] Python 함수 추출 정확도
-  - [ ] 클래스 + 메서드 분리
-  - [ ] 비Python 폴백
-  - [ ] MIN/MAX_LINES 경계 케이스
-  - [ ] SyntaxError 파일 처리
-  - [ ] 빈 파일 처리
-  - [ ] 데코레이터 포함 확인
-  - [ ] 모듈 레벨 코드 추출
+- [x] `ASTChunker` 클래스 구현 (ChunkerProtocol 구현체)
+- [x] Python 파일 처리:
+  - [x] `ast` built-in으로 `FunctionDef`, `AsyncFunctionDef`, `ClassDef` 노드 추출
+  - [x] 노드별 시작/끝 라인 추출 → CodeChunk 생성
+  - [x] 클래스 내부 메서드: 클래스 청크 + 개별 메서드 청크 모두 생성
+  - [x] 데코레이터 포함: `@decorator` 라인부터 함수 끝까지
+  - [x] 모듈 레벨 코드: 함수/클래스에 속하지 않는 코드 → "module" 타입 청크
+- [x] 비Python 파일 처리:
+  - [x] `.js`, `.ts`, `.yaml`, `.md` 등 → 고정 크기(50줄) 폴백
+  - [x] 줄 수 기반 오버랩 (10줄) 적용
+- [x] 크기 제한:
+  - [x] `MIN_LINES=5`: 5줄 미만 함수 → 모듈 청크에 포함
+  - [x] `MAX_LINES=100`: 100줄 초과 → 서브 청킹 (메서드별 분리)
+- [x] `CodeChunk` 확장 필드 활용:
+  - [x] `chunk_type`: "function" | "class" | "method" | "module" | "block"
+  - [x] `name`: 함수명/클래스명 (검색용)
+- [x] 에러 처리: 파싱 실패 시 고정 크기 폴백 (SyntaxError 등)
+- [x] 테스트: `tests/test_chunker.py`
+  - [x] Python 함수 추출 정확도
+  - [x] 클래스 + 메서드 분리
+  - [x] 비Python 폴백
+  - [x] MIN/MAX_LINES 경계 케이스
+  - [x] SyntaxError 파일 처리
+  - [x] 빈 파일 처리
+  - [x] 데코레이터 포함 확인
+  - [x] 모듈 레벨 코드 추출
 
 ### 1-2. `src/rag/scorer.py` — BM25 스코어링 (신규)
 
 > 현재: Boolean BoW (단어가 있으면 1, 없으면 0) → IDF 없음, 희귀 토큰 가중치 없음
 
-- [ ] `BM25Scorer` 클래스 구현 (ScorerProtocol 구현체)
-- [ ] `rank-bm25` 라이브러리 활용 (`BM25Okapi`)
-- [ ] `fit(documents: list[str])`: 문서 컬렉션으로 IDF 계산
-  - [ ] 토큰화: 공백 분리 + 소문자 변환 + 특수문자 제거
-  - [ ] Python 식별자 분리: `camelCase` → `camel`, `case` / `snake_case` → `snake`, `case`
-  - [ ] 한글 지원: 형태소 분석 없이 공백 기반 (차후 개선)
-- [ ] `score(query: str, top_k: int)` → `list[tuple[CodeChunk, float]]`
-  - [ ] 쿼리 토큰화 (동일 방식)
-  - [ ] BM25 스코어 계산
-  - [ ] top_k 결과 반환 (스코어 내림차순)
-- [ ] 파라미터 설정:
-  - [ ] k1=1.5 (기본값, config에서 오버라이드 가능)
-  - [ ] b=0.75 (기본값)
-- [ ] 테스트: `tests/test_scorer.py`
-  - [ ] 기본 BM25 스코어링
-  - [ ] IDF 가중치 (희귀 단어 높은 점수)
-  - [ ] 빈 쿼리/빈 문서
-  - [ ] top_k 제한
-  - [ ] Python 식별자 토큰화
+- [x] `BM25Scorer` 클래스 구현 (ScorerProtocol 구현체)
+- [x] `rank-bm25` 라이브러리 활용 (`BM25Okapi`)
+- [x] `fit(documents: list[str])`: 문서 컬렉션으로 IDF 계산
+  - [x] 토큰화: 공백 분리 + 소문자 변환 + 특수문자 제거
+  - [x] Python 식별자 분리: `camelCase` → `camel`, `case` / `snake_case` → `snake`, `case`
+  - [x] 한글 지원: 형태소 분석 없이 공백 기반 (차후 개선)
+- [x] `score(query: str, top_k: int)` → `list[tuple[CodeChunk, float]]`
+  - [x] 쿼리 토큰화 (동일 방식)
+  - [x] BM25 스코어 계산
+  - [x] top_k 결과 반환 (스코어 내림차순)
+- [x] 파라미터 설정:
+  - [x] k1=1.5 (기본값, config에서 오버라이드 가능)
+  - [x] b=0.75 (기본값)
+- [x] 테스트: `tests/test_scorer.py`
+  - [x] 기본 BM25 스코어링
+  - [x] IDF 가중치 (희귀 단어 높은 점수)
+  - [x] 빈 쿼리/빈 문서
+  - [x] top_k 제한
+  - [x] Python 식별자 토큰화
 
 ### 1-3. `src/rag/embedder.py` — Anthropic API 임베딩 (신규)
 
 > Anthropic API의 임베딩 엔드포인트 활용 (subscription으로 추가 비용 없음)
 
-- [ ] `AnthropicEmbedder` 클래스 구현 (EmbeddingProtocol 구현체)
-- [ ] Anthropic API 직접 호출:
-  - [ ] `ANTHROPIC_API_KEY` 환경변수 사용 시: `anthropic.Anthropic().embeddings.create()`
+- [x] `AnthropicEmbedder` 클래스 구현 (EmbeddingProtocol 구현체)
+- [x] Anthropic API 직접 호출:
+  - [x] `ANTHROPIC_API_KEY` 환경변수 사용 (또는 `VOYAGE_API_KEY`)
   - [ ] API 키 없을 때: claude-agent-sdk subscription 모드로 폴백
-  - [ ] 모델: `voyage-3` 또는 Anthropic 기본 임베딩 모델
-- [ ] 배치 처리:
-  - [ ] 한 번에 최대 96개 텍스트 (API 제한)
-  - [ ] 96개 초과 시 자동 분할 + 순차 처리
-- [ ] 임베딩 캐시:
-  - [ ] 텍스트 해시(SHA256) → 임베딩 벡터 매핑
-  - [ ] `.rag_cache/embeddings.json` 파일 저장
-  - [ ] 동일 텍스트 재임베딩 방지 (캐시 히트율 로깅)
-- [ ] 에러 처리:
-  - [ ] API 실패 시 재시도 (3회, 지수 백오프)
-  - [ ] Rate limit 시 대기 후 재시도
-  - [ ] 임베딩 불가 시: 벡터 검색 비활성화 (graceful degradation)
-- [ ] 테스트: `tests/test_embedder.py`
-  - [ ] API 호출 mock
-  - [ ] 배치 분할 로직
-  - [ ] 캐시 히트/미스
+  - [x] 모델: `voyage-3` 또는 Anthropic 기본 임베딩 모델
+- [x] 배치 처리:
+  - [x] 한 번에 최대 96개 텍스트 (API 제한)
+  - [x] 96개 초과 시 자동 분할 + 순차 처리
+- [x] 임베딩 캐시:
+  - [x] 텍스트 해시(SHA256) → 임베딩 벡터 매핑
+  - [x] `.rag_cache/embeddings.json` 파일 저장
+  - [x] 동일 텍스트 재임베딩 방지 (캐시 히트율 로깅)
+- [x] 에러 처리:
+  - [x] API 실패 시 재시도 (3회, 지수 백오프)
+  - [x] Rate limit 시 대기 후 재시도
+  - [x] 임베딩 불가 시: 벡터 검색 비활성화 (graceful degradation)
+- [x] 테스트: `tests/test_embedder.py`
+  - [x] API 호출 mock
+  - [x] 배치 분할 로직
+  - [x] 캐시 히트/미스
   - [ ] 에러 시 graceful degradation
   - [ ] SDK 폴백 모드
 
@@ -194,109 +194,109 @@
 
 > 임베딩 벡터를 저장하고 유사도 검색을 수행
 
-- [ ] `VectorStore` 인터페이스 정의:
-  - [ ] `add(chunks: list[CodeChunk], embeddings: list[list[float]])`
-  - [ ] `search(query_embedding: list[float], top_k: int) → list[tuple[CodeChunk, float]]`
-  - [ ] `remove(file_path: str)` — 파일별 삭제 (증분 인덱싱용)
-  - [ ] `clear()` — 전체 초기화
-- [ ] `LanceDBStore` 구현 (lancedb optional):
-  - [ ] `lancedb` 가 설치되어 있을 때 사용
-  - [ ] 테이블: file_path, chunk_content, start_line, end_line, chunk_type, name, vector
-  - [ ] ANN 검색 (Approximate Nearest Neighbor)
-- [ ] `NumpyStore` 폴백 구현:
-  - [ ] `lancedb` 없을 때 numpy cosine similarity 사용
-  - [ ] 인메모리 저장 (작은 프로젝트에 적합)
-  - [ ] `numpy.dot(a, b) / (norm(a) * norm(b))` 코사인 유사도
-- [ ] 팩토리 함수: `create_vector_store()` → 환경에 따라 자동 선택
-- [ ] 테스트: `tests/test_vector_store.py`
-  - [ ] NumpyStore 기본 add/search
-  - [ ] 코사인 유사도 정확도
-  - [ ] remove 후 검색 결과 변경
-  - [ ] 빈 스토어 검색
-  - [ ] LanceDBStore mock 테스트
+- [x] `VectorStore` 인터페이스 정의:
+  - [x] `add(chunks: list[CodeChunk], embeddings: list[list[float]])`
+  - [x] `search(query_embedding: list[float], top_k: int) → list[tuple[CodeChunk, float]]`
+  - [x] `remove(file_path: str)` — 파일별 삭제 (증분 인덱싱용)
+  - [x] `clear()` — 전체 초기화
+- [x] `LanceDBStore` 구현 (lancedb optional):
+  - [x] `lancedb` 가 설치되어 있을 때 사용
+  - [x] 테이블: file_path, chunk_content, start_line, end_line, chunk_type, name, vector
+  - [x] ANN 검색 (Approximate Nearest Neighbor)
+- [x] `NumpyStore` 폴백 구현:
+  - [x] `lancedb` 없을 때 numpy cosine similarity 사용
+  - [x] 인메모리 저장 (작은 프로젝트에 적합)
+  - [x] `numpy.dot(a, b) / (norm(a) * norm(b))` 코사인 유사도
+- [x] 팩토리 함수: `create_vector_store()` → 환경에 따라 자동 선택
+- [x] 테스트: `tests/test_vector_store.py`
+  - [x] NumpyStore 기본 add/search
+  - [x] 코사인 유사도 정확도
+  - [x] remove 후 검색 결과 변경
+  - [x] 빈 스토어 검색
+  - [x] LanceDBStore mock 테스트
 
 ### 1-5. `src/rag/hybrid_search.py` — BM25 + 벡터 하이브리드 검색 (신규)
 
 > BM25 렉시컬 검색 + 벡터 시맨틱 검색을 가중 결합
 
-- [ ] `HybridSearcher` 클래스 구현:
-  - [ ] 의존성 주입: `BM25Scorer`, `VectorStore`, `AnthropicEmbedder`
-  - [ ] `search(query: str, top_k: int) → list[tuple[CodeChunk, float]]`
-- [ ] 검색 흐름:
-  - [ ] BM25 검색: top_k * 2 개 후보 추출 (over-fetch)
-  - [ ] 벡터 검색: 쿼리 임베딩 → top_k * 2 개 후보 추출
-  - [ ] 스코어 정규화: 각각 0~1 범위로 min-max 정규화
-  - [ ] 가중 결합: `final = bm25_weight * bm25_score + vector_weight * vector_score`
-  - [ ] 가중치: config에서 설정 (기본: bm25=0.6, vector=0.4)
-  - [ ] 중복 제거: 동일 파일+라인 범위 → 높은 스코어 유지
-  - [ ] top_k 최종 결과 반환
-- [ ] Graceful degradation:
-  - [ ] 벡터 검색 비활성화 시 (`use_vector_search=False`): BM25만 사용
-  - [ ] 임베딩 실패 시: 자동으로 BM25-only 모드 전환
-  - [ ] BM25 + 벡터 결과가 겹치지 않을 때: 각각 top_k/2씩
-- [ ] 테스트: `tests/test_hybrid_search.py`
-  - [ ] BM25-only 모드
-  - [ ] 하이브리드 모드 (mock embedder)
-  - [ ] 가중치 변경에 따른 결과 순서 변화
-  - [ ] 중복 제거
-  - [ ] graceful degradation
+- [x] `HybridSearcher` 클래스 구현:
+  - [x] 의존성 주입: `BM25Scorer`, `VectorStore`, `AnthropicEmbedder`
+  - [x] `search(query: str, top_k: int) → list[tuple[CodeChunk, float]]`
+- [x] 검색 흐름:
+  - [x] BM25 검색: top_k * 2 개 후보 추출 (over-fetch)
+  - [x] 벡터 검색: 쿼리 임베딩 → top_k * 2 개 후보 추출
+  - [x] 스코어 정규화: 각각 0~1 범위로 min-max 정규화
+  - [x] 가중 결합: `final = bm25_weight * bm25_score + vector_weight * vector_score`
+  - [x] 가중치: config에서 설정 (기본: bm25=0.6, vector=0.4)
+  - [x] 중복 제거: 동일 파일+라인 범위 → 높은 스코어 유지
+  - [x] top_k 최종 결과 반환
+- [x] Graceful degradation:
+  - [x] 벡터 검색 비활성화 시 (`use_vector_search=False`): BM25만 사용
+  - [x] 임베딩 실패 시: 자동으로 BM25-only 모드 전환
+  - [x] BM25 + 벡터 결과가 겹치지 않을 때: 각각 top_k/2씩
+- [x] 테스트: `tests/test_hybrid_search.py`
+  - [x] BM25-only 모드
+  - [x] 하이브리드 모드 (mock embedder)
+  - [x] 가중치 변경에 따른 결과 순서 변화
+  - [x] 중복 제거
+  - [x] graceful degradation
 
 ### 1-6. `src/rag/incremental_indexer.py` — 증분 인덱싱 (신규)
 
 > 현재: 매번 전체 파일 재인덱싱 → 변경된 파일만 재인덱싱
 
-- [ ] `IncrementalIndexer` 클래스 구현:
-  - [ ] 의존성 주입: `ASTChunker`, `BM25Scorer`, `VectorStore`
-  - [ ] `index(project_path: str)` — 전체 인덱싱 (최초 1회)
-  - [ ] `update()` — 증분 인덱싱 (변경분만)
-  - [ ] `search(query: str, top_k: int)` → HybridSearcher 위임
-- [ ] 변경 감지:
-  - [ ] 파일 mtime (수정 시각) 기반
-  - [ ] `.rag_cache/file_index.json`: {file_path: mtime, chunk_count, last_indexed}
-  - [ ] 새 파일: 인덱싱 추가
-  - [ ] 수정 파일: 기존 청크 삭제 → 재인덱싱
-  - [ ] 삭제 파일: 인덱스에서 제거
-- [ ] 인덱스 캐시:
-  - [ ] `.rag_cache/` 디렉토리
-  - [ ] `bm25_index.pkl`: BM25 인덱스 직렬화 (pickle)
-  - [ ] `file_index.json`: 파일 메타데이터
-  - [ ] `embeddings.json`: 임베딩 캐시
-  - [ ] `.gitignore`에 `.rag_cache/` 추가
-- [ ] 파일 필터링:
+- [x] `IncrementalIndexer` 클래스 구현:
+  - [x] 의존성 주입: `ASTChunker`, `BM25Scorer`, `VectorStore`
+  - [x] `index(project_path: str)` — 전체 인덱싱 (최초 1회)
+  - [x] `update()` — 증분 인덱싱 (변경분만)
+  - [x] `search(query: str, top_k: int)` → HybridSearcher 위임
+- [x] 변경 감지:
+  - [x] 파일 mtime (수정 시각) 기반
+  - [x] `.rag_cache/file_index.json`: {file_path: mtime, chunk_count, last_indexed}
+  - [x] 새 파일: 인덱싱 추가
+  - [x] 수정 파일: 기존 청크 삭제 → 재인덱싱
+  - [x] 삭제 파일: 인덱스에서 제거
+- [x] 인덱스 캐시:
+  - [x] `.rag_cache/` 디렉토리
+  - [x] `bm25_index.pkl`: BM25 인덱스 직렬화 (pickle)
+  - [x] `file_index.json`: 파일 메타데이터
+  - [x] `embeddings.json`: 임베딩 캐시
+  - [x] `.gitignore`에 `.rag_cache/` 추가
+- [x] 파일 필터링:
   - [ ] `.gitignore` 패턴 준수
-  - [ ] 바이너리 파일 제외
-  - [ ] `__pycache__/`, `.git/`, `node_modules/`, `.venv/` 제외
+  - [x] 바이너리 파일 제외
+  - [x] `__pycache__/`, `.git/`, `node_modules/`, `.venv/` 제외
   - [ ] 설정 가능한 include/exclude 패턴
-- [ ] 싱글톤 패턴:
-  - [ ] `AgentExecutor._build_options()` 에서 매번 새 MCP 서버 생성하는 문제 해결
-  - [ ] 모듈 레벨 싱글톤 또는 의존성 주입으로 전환
-- [ ] 테스트: `tests/test_incremental_indexer.py`
-  - [ ] 최초 전체 인덱싱
-  - [ ] 파일 수정 후 증분 인덱싱 (변경분만 처리 확인)
-  - [ ] 파일 삭제 후 인덱스 정리
-  - [ ] 캐시 저장/로드
+- [x] 싱글톤 패턴:
+  - [x] `AgentExecutor._build_options()` 에서 매번 새 MCP 서버 생성하는 문제 해결
+  - [x] 모듈 레벨 싱글톤 또는 의존성 주입으로 전환
+- [x] 테스트: `tests/test_incremental_indexer.py`
+  - [x] 최초 전체 인덱싱
+  - [x] 파일 수정 후 증분 인덱싱 (변경분만 처리 확인)
+  - [x] 파일 삭제 후 인덱스 정리
+  - [x] 캐시 저장/로드
   - [ ] .gitignore 패턴 필터링
-  - [ ] 빈 프로젝트 처리
+  - [x] 빈 프로젝트 처리
 
 ### 1-7. `src/rag/mcp_server.py` — MCP 도구 확장 (기존 수정)
 
 > 현재: search_code, reindex_codebase (2개만)
 
-- [ ] 기존 도구 유지 + IncrementalIndexer 연동:
-  - [ ] `search_code` → HybridSearcher 사용으로 전환
-  - [ ] `reindex_codebase` → IncrementalIndexer.update() 사용
-- [ ] 신규 도구 추가:
-  - [ ] `search_by_symbol(name: str)`: 함수명/클래스명으로 정확 검색
+- [x] 기존 도구 유지 + IncrementalIndexer 연동:
+  - [x] `search_code` → HybridSearcher 사용으로 전환
+  - [x] `reindex_codebase` → IncrementalIndexer.update() 사용
+- [x] 신규 도구 추가:
+  - [x] `search_by_symbol(name: str)`: 함수명/클래스명으로 정확 검색
     - CodeChunk.name 필드 활용
     - 부분 매칭 지원 (prefix, contains)
-  - [ ] `get_file_structure(path?: str)`: 프로젝트 디렉토리 구조 반환
+  - [x] `get_file_structure(path?: str)`: 프로젝트 디렉토리 구조 반환
     - 트리 형태 문자열
     - 깊이 제한 옵션
-  - [ ] `get_similar_patterns(code_snippet: str)`: 유사 코드 패턴 검색
+  - [x] `get_similar_patterns(code_snippet: str)`: 유사 코드 패턴 검색
     - 임베딩 기반 유사도 검색
     - "이런 패턴의 코드가 어디에 있나?" 질문 대응
-- [ ] 기존 test_indexer.py, test_mcp_server.py 재작성
-- [ ] 테스트: 신규 도구별 테스트 추가
+- [x] 기존 test_indexer.py, test_mcp_server.py 재작성
+- [x] 테스트: 신규 도구별 테스트 추가
 
 ### Phase 1 검증 체크리스트
 
