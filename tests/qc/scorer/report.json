@@ -1,0 +1,13 @@
+{
+  "test_type": "module_qc",
+  "target": "src/rag/scorer.py",
+  "total_cases": 10000,
+  "passed": 10000,
+  "failed": 0,
+  "pass_rate": 100.0,
+  "duration_seconds": 21.1,
+  "avg_case_ms": 2.016,
+  "failures_by_category": {},
+  "top_failures": [],
+  "fix_requests": []
+}

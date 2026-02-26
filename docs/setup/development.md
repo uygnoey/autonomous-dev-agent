@@ -97,28 +97,28 @@ uv sync
 이 명령으로 `pyproject.toml`의 `dependencies`와 `dev` 그룹이 함께 설치됩니다.
 
 ```toml
-# pyproject.toml 기준 주요 의존성
+# pyproject.toml 기준 주요 의존성 (Phase 1 기준)
 dependencies = [
-    "anthropic>=0.40.0",
-    "claude-agent-sdk>=0.1.0",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
-    "pyyaml>=6.0",
-    "textual>=0.80.0",
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
-    "websockets>=13.0",
-    "python-multipart>=0.0.12",
+    "anthropic>=0.40.0",        # Claude API
+    "claude-agent-sdk>=0.1.0",  # Claude Agent SDK
+    "pydantic>=2.0",            # 데이터 검증
+    "pydantic-settings>=2.0",   # 설정 관리
+    "pyyaml>=6.0",              # YAML 설정 파일
+    "textual>=0.80.0",          # TUI 프레임워크
+    "python-dotenv>=1.0.0",     # .env 파일 로딩
+    "rank-bm25>=0.2.2",         # BM25 검색 (Phase 1 추가)
+    "numpy>=1.26.0",            # 벡터 연산 (Phase 1 추가)
+    "structlog>=24.0",          # 구조화 로깅
 ]
 ```
 
-RAG 벡터 검색 기능(chromadb, sentence-transformers)을 함께 설치하려면:
+LanceDB 벡터 DB(디스크 기반 ANN 검색)를 함께 설치하려면:
 
 ```bash
 uv sync --extra rag
 ```
 
-`rag` 옵션 없이 설치하면 `CodebaseIndexer`는 텍스트 기반 검색만 사용합니다.
+`rag` 옵션 없이 설치하면 `NumpyStore`(인메모리 코사인 유사도)를 기본으로 사용합니다. `VOYAGE_API_KEY` 또는 `ANTHROPIC_API_KEY`가 없으면 BM25-only 모드로 동작합니다.
 
 ---
 
@@ -135,6 +135,10 @@ cp .env.example .env
 ```dotenv
 # Anthropic API Key (선택 - 없으면 Claude Code 세션 사용)
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+# Voyage AI 임베딩 키 (선택 - 없으면 BM25-only 모드로 동작)
+# ANTHROPIC_API_KEY로 Voyage AI API를 사용할 수 있으므로 별도 설정 불필요할 수 있음
+VOYAGE_API_KEY=pa-your-voyage-key-here
 
 # Agent Teams 활성화 (.claude/settings.json에도 설정됨)
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
@@ -325,14 +329,29 @@ COMPLETION_CRITERIA = {
 
 우선순위: `ARCHITECT > TESTER > REVIEWER > DOCUMENTER > CODER`. 매칭 없으면 CODER가 기본값입니다.
 
-### RAG MCP 서버
+### RAG MCP 서버 (Phase 1 업데이트)
 
-`src/rag/mcp_server.py`의 `build_rag_mcp_server()`는 두 개의 MCP 도구를 제공합니다.
+`src/rag/mcp_server.py`의 `build_rag_mcp_server()`는 5종 MCP 도구를 제공합니다.
 
-- `search_code(query, top_k=5)`: 코드베이스에서 쿼리와 관련된 코드 청크를 반환합니다.
-- `reindex_codebase()`: 코드 변경 후 인덱스를 재구축합니다.
+- `search_code(query, top_k=5)`: BM25+벡터 하이브리드 검색으로 관련 코드 청크 반환
+- `reindex_codebase()`: mtime 기반 증분 재인덱싱 (변경 파일만 처리)
+- `search_by_symbol(name, mode="contains")`: 함수·클래스 이름으로 심볼 검색
+- `get_file_structure(path="", depth=3)`: 디렉토리 트리 반환
+- `get_similar_patterns(code_snippet, top_k=5)`: 임베딩 기반 유사 코드 검색
 
-`CodebaseIndexer`는 텍스트 기반 토큰 매칭 검색을 기본으로 사용합니다. `.py`, `.ts`, `.js`, `.tsx`, `.jsx`, `.go`, `.java`, `.rs` 확장자를 인덱싱하며, `__pycache__`, `.git`, `node_modules`, `.venv` 디렉토리는 제외합니다.
+`IncrementalIndexer`는 mtime 기반 증분 인덱싱을 사용하며 `.rag_cache/`에 캐시를 저장합니다.
+
+**RAG 테스트 실행:**
+
+```bash
+# RAG 모듈 단위 테스트
+uv run pytest tests/test_chunker.py tests/test_scorer.py tests/test_embedder.py \
+    tests/test_vector_store.py tests/test_hybrid_search.py \
+    tests/test_incremental_indexer.py tests/test_mcp_server.py -v
+
+# 벡터 DB 포함 설치 (선택)
+uv sync --extra rag
+```
 
 ### 상태 저장
 

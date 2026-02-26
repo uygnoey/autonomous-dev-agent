@@ -1,0 +1,13 @@
+{
+  "test_type": "module_qc",
+  "target": "src/rag/embedder.py",
+  "total_cases": 10000,
+  "passed": 10000,
+  "failed": 0,
+  "pass_rate": 100.0,
+  "duration_seconds": 1700.79,
+  "avg_case_ms": 169.993,
+  "failures_by_category": {},
+  "top_failures": [],
+  "fix_requests": []
+}

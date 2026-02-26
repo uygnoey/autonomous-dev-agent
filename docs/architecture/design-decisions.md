@@ -93,3 +93,105 @@ Autonomous Dev Agent의 주요 아키텍처 결정과 그 이유.
 - Python 네이티브 비동기(asyncio) 통합이 자연스러움 — Orchestrator의 `async/await`와 통합이 쉬움
 - 선언적 CSS와 컴포넌트 모델로 복잡한 레이아웃(좌측 대시보드 + 우측 채팅) 구현 가능
 - 터미널에서 실행되므로 원격 서버에서도 사용 가능 (웹 UI 불필요)
+
+---
+
+## Phase 1 RAG 재설계 설계 결정
+
+---
+
+## 9. AST 기반 청킹: 의미 단위 분할
+
+**결정**: Python 파일은 `ast` 모듈로 함수·클래스·메서드 경계를 추출하여 청킹한다. 비Python 파일은 50줄 고정 + 10줄 오버랩 폴백을 유지한다.
+
+**이유**:
+- 함수나 클래스 중간에서 잘린 청크는 LLM이 컨텍스트를 파악하기 어려움
+- AST로 정확한 경계(시작줄~끝줄)를 추출하면 함수 전체가 하나의 청크로 유지됨
+- 데코레이터를 청크에 포함(`_decorator_start()`)하여 `@property`, `@staticmethod` 같은 의미 정보 보존
+
+**트레이드오프**:
+- Python AST만 지원 → 비Python 파일은 폴백. Go, Java AST 지원은 복잡도 대비 이득이 작음
+- SyntaxError 발생 시 폴백으로 graceful 처리하여 파싱 실패가 인덱싱을 중단시키지 않음
+
+---
+
+## 10. Protocol 기반 인터페이스: 구조적 타이핑
+
+**결정**: `ChunkerProtocol`, `ScorerProtocol`, `EmbeddingProtocol`은 `src/core/interfaces.py`에 정의하고, 구현체는 명시적 `implements` 없이 구조적으로 준수한다. `VectorStoreProtocol`은 `src/rag/vector_store.py` 내부에 정의한다.
+
+**이유**:
+- Python의 구조적 타이핑(structural subtyping)을 활용하면 상속 없이도 `isinstance(ASTChunker(), ChunkerProtocol) == True` 보장
+- 테스트에서 Mock 객체를 Protocol 체크 없이 주입 가능 → 테스트 용이성 향상
+- `@runtime_checkable`로 런타임 체크도 지원하여 디버깅 편의
+
+---
+
+## 11. BM25 선택: Boolean BoW 대체
+
+**결정**: 기존 Boolean BoW(0/1 존재 여부) 대신 `rank-bm25` 라이브러리의 `BM25Okapi`를 사용한다.
+
+**이유**:
+- Boolean BoW는 희귀 키워드(`BM25Okapi`, `cosine_similarity`)와 흔한 키워드(`def`, `class`)를 동등하게 취급
+- BM25의 IDF(Inverse Document Frequency)는 흔한 단어의 가중치를 낮추고 희귀 단어의 가중치를 높여 검색 정확도 향상
+- `rank-bm25`는 순수 Python 라이브러리로 추가 빌드 의존성 없음
+
+**코드 특화 토큰화**:
+- camelCase 분리 (`getUserById` → `get`, `user`, `by`, `id`)
+- `_`를 공백으로 치환하여 snake_case 자동 분리
+- 특수문자 제거로 연산자·괄호 노이즈 제거
+
+---
+
+## 12. Voyage AI 임베딩: Anthropic 생태계 통합
+
+**결정**: 벡터 임베딩 모델로 Voyage AI의 `voyage-3`를 사용한다. `VOYAGE_API_KEY` 없으면 `ANTHROPIC_API_KEY`로 폴백한다.
+
+**이유**:
+- Voyage AI는 Anthropic 투자 회사로 Claude와 통합 최적화된 임베딩 모델 제공
+- `voyage-3`는 코드 검색에 최적화된 1024차원 임베딩
+- `ANTHROPIC_API_KEY`로 Voyage AI API를 사용할 수 있어 추가 키 관리 부담 최소화
+
+**SHA256 캐시 설계**:
+- 텍스트 SHA256 해시를 캐시 키로 사용하여 동일 텍스트의 중복 API 호출 방지
+- JSON 직렬화로 재시작 후에도 캐시 유지 → 전체 재인덱싱 시 API 호출 최소화
+
+---
+
+## 13. NumpyStore vs LanceDBStore: 단계적 확장
+
+**결정**: 기본은 `NumpyStore`(인메모리 numpy), `lancedb` 설치 시 `LanceDBStore`(디스크 ANN)로 자동 전환. `create_vector_store()` 팩토리로 선택 로직 캡슐화.
+
+**이유**:
+- 소~중형 프로젝트(<10,000 청크)는 numpy 코사인 유사도 검색으로 충분히 빠름
+- lancedb는 ANN 검색으로 대형 프로젝트에서 성능 우위 + 디스크 영속화
+- 선택적 의존성(`uv sync --extra rag`)으로 기본 설치 용량 최소화
+- `LanceDBStore` 초기화 실패 시 `NumpyStore`로 폴백하여 안정성 보장
+
+---
+
+## 14. 모듈 레벨 싱글톤: 재생성 방지
+
+**결정**: `IncrementalIndexer`는 `get_indexer(project_path)` 함수로 모듈 레벨 싱글톤을 관리한다.
+
+**이유**:
+- `AgentExecutor._build_options()`는 에이전트 실행마다 호출됨
+- 매번 새 인덱서를 생성하면 전체 재인덱싱 발생 → 수십 초 지연
+- 싱글톤으로 동일 인덱서를 재사용하면 `update()`만 호출하면 됨
+
+**`reset_indexer()` 제공**:
+- 테스트에서 격리를 위해 싱글톤 초기화 함수를 공개 API로 제공
+
+---
+
+## 15. 하이브리드 검색 가중치: 0.6 BM25 + 0.4 벡터
+
+**결정**: 기본 가중치를 BM25 0.6, 벡터 0.4로 설정한다.
+
+**이유**:
+- 코드 검색에서 함수명, 클래스명 같은 정확한 키워드 매칭(BM25)이 의미적 유사도(벡터)보다 더 중요한 경우가 많음
+- 0.6/0.4 비율은 키워드 중심이지만 동의어·유사 구현도 검색 가능한 균형점
+- `HybridSearcher` 생성자 파라미터로 가중치를 주입 가능하여 특수 케이스에서 조정 가능
+
+**min-max 정규화 선택 이유**:
+- BM25 점수와 코사인 유사도는 스케일이 다름 (BM25는 0~수십, 코사인은 -1~1)
+- min-max 정규화로 [0, 1] 범위 통일 후 가중 합산하면 스케일 불균형 제거

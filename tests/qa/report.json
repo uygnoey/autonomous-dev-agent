@@ -1,0 +1,31 @@
+{
+  "test_type": "e2e_qa",
+  "total_cases": 100000,
+  "passed": 100000,
+  "failed": 0,
+  "pass_rate": 100.0,
+  "duration_seconds": 71.98,
+  "avg_case_ms": 0.575,
+  "failures_by_scenario": {},
+  "failures_by_subtype": {},
+  "scenario_stats": {
+    "full_pipeline": {
+      "failed": 0,
+      "elapsed_ms": 17685.7
+    },
+    "integration_search": {
+      "failed": 0,
+      "elapsed_ms": 5852.7
+    },
+    "data_consistency": {
+      "failed": 0,
+      "elapsed_ms": 7823.5
+    },
+    "performance": {
+      "failed": 0,
+      "elapsed_ms": 26127.9
+    }
+  },
+  "top_failures": [],
+  "fix_requests": []
+}

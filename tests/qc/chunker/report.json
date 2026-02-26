@@ -1,0 +1,13 @@
+{
+  "test_type": "module_qc",
+  "target": "src/rag/chunker.py",
+  "total_cases": 10000,
+  "passed": 10000,
+  "failed": 0,
+  "pass_rate": 100.0,
+  "duration_seconds": 4.77,
+  "avg_case_ms": 0.452,
+  "failures_by_category": {},
+  "top_failures": [],
+  "fix_requests": []
+}

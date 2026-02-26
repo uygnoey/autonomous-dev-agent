@@ -8,28 +8,66 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 
 ## 목차
 
-1. [주요 기능](#주요-기능)
-2. [기술 스택](#기술-스택)
-3. [빠른 시작](#빠른-시작)
-4. [실행 방법](#실행-방법)
-5. [디렉토리 구조](#디렉토리-구조)
-6. [환경 변수](#환경-변수)
-7. [테스트 실행](#테스트-실행)
-8. [Agent Teams](#agent-teams)
-9. [이슈 분류 규칙](#이슈-분류-규칙)
+1. [Phase 1 완성 사항](#phase-1-완성-사항)
+2. [주요 기능](#주요-기능)
+3. [기술 스택](#기술-스택)
+4. [빠른 시작](#빠른-시작)
+5. [실행 방법](#실행-방법)
+6. [디렉토리 구조](#디렉토리-구조)
+7. [환경 변수](#환경-변수)
+8. [테스트 실행](#테스트-실행)
+9. [Agent Teams](#agent-teams)
+10. [이슈 분류 규칙](#이슈-분류-규칙)
+
+---
+
+## Phase 1 완성 사항
+
+**RAG 시스템 전면 재설계** - 2026-02-26 완료
+
+| 항목 | 이전 | Phase 1 이후 |
+|------|------|-------------|
+| 청킹 방식 | 50줄 고정 슬라이싱 | AST 경계 기반 (함수·클래스·메서드·모듈 단위) |
+| 검색 알고리즘 | Boolean BoW (0/1) | BM25 TF-IDF + 벡터 코사인 유사도 하이브리드 |
+| 인덱싱 전략 | 매번 전체 재인덱싱 O(n) | mtime 기반 증분 인덱싱 O(변경분) |
+| MCP 도구 수 | 2개 | 5개 |
+| 벡터 검색 | 없음 | Voyage AI 임베딩 + NumpyStore/LanceDBStore |
+
+### 7개 모듈 구현 완료
+
+| 모듈 | 파일 | 상태 |
+|------|------|------|
+| ASTChunker | `src/rag/chunker.py` | 완료 |
+| BM25Scorer | `src/rag/scorer.py` | 완료 |
+| AnthropicEmbedder | `src/rag/embedder.py` | 완료 |
+| VectorStore | `src/rag/vector_store.py` | 완료 |
+| HybridSearcher | `src/rag/hybrid_search.py` | 완료 |
+| IncrementalIndexer | `src/rag/incremental_indexer.py` | 완료 |
+| MCP Server | `src/rag/mcp_server.py` | 완료 |
+
+### 테스트 결과
+
+| 구분 | 테스트 수 | 결과 |
+|------|-----------|------|
+| 단위 테스트 | 306개 | 100% 통과 |
+| 모듈 QC 테스트 | 70,000개 | 100% 통과 |
+| E2E 통합 테스트 | 35개 | 100% 통과 |
+| **합계** | **70,341개** | **100% 통과** |
 
 ---
 
 ## 주요 기능
 
 - **자율 개발 루프**: Planner가 다음 작업을 결정하고, Executor가 코드를 작성하고, Verifier가 pytest + ruff + mypy로 검증하는 사이클을 완성 조건을 만족할 때까지 반복합니다.
+- **AST 기반 청킹**: Python 파일을 함수·클래스·메서드 경계로 분할하여 의미 단위 컨텍스트를 보존합니다. 비Python 파일은 50줄 오버랩 폴백을 사용합니다.
+- **BM25 렉시컬 검색**: rank-bm25 라이브러리 기반 IDF 가중치 스코어링. camelCase, snake_case 코드 특화 토큰화를 포함합니다.
+- **벡터 시맨틱 검색**: Voyage AI (voyage-3 모델) 임베딩과 코사인 유사도 검색. SHA256 캐시로 중복 API 호출을 방지합니다.
+- **하이브리드 검색**: BM25(0.6)와 벡터(0.4) 결과를 min-max 정규화 후 가중 합산합니다. 벡터 검색 불가 시 BM25-only 모드로 자동 전환합니다.
+- **증분 인덱싱**: mtime 기반으로 변경 파일만 재인덱싱하여 대형 프로젝트의 인덱싱 지연을 최소화합니다.
+- **5종 MCP 도구**: search_code, reindex_codebase, search_by_symbol, get_file_structure, get_similar_patterns를 에이전트에 제공합니다.
 - **Textual TUI**: 스펙 확정 대화 화면(SpecScreen)과 실시간 개발 대시보드(DevScreen)로 구성된 터미널 인터페이스를 제공합니다.
-- **SpecBuilder**: TUI에서 Claude와 대화하며 프로젝트 스펙을 확정합니다. 확정된 스펙은 `spec.md`로 저장됩니다.
-- **AgentExecutor 라우팅**: task_prompt의 키워드를 분석하여 architect, coder, tester, reviewer, documenter 중 적합한 에이전트를 자동으로 선택합니다.
-- **RAG MCP 서버**: `search_code` 도구로 코드베이스에서 유사 패턴을 검색하여 에이전트가 일관된 코드를 작성하도록 지원합니다.
 - **토큰 한도 자동 대기**: API rate limit 초과 시 지수 백오프로 대기했다가 재시작합니다.
 - **상태 영속성**: `.claude/state.json`에 진행 상태를 저장하여 중단 후 재개할 수 있습니다.
-- **EventBus**: Orchestrator와 TUI 사이의 비동기 통신을 담당합니다. 이벤트 타입은 `LOG`, `PROGRESS`, `QUESTION`, `SPEC_MESSAGE`, `AGENT_OUTPUT`, `COMPLETED`입니다.
 
 ---
 
@@ -41,10 +79,12 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 | Claude 두뇌 | anthropic >= 0.40.0 |
 | Claude 실행 계층 | claude-agent-sdk >= 0.1.0 |
 | TUI 프레임워크 | textual >= 0.80.0 |
+| BM25 검색 | rank-bm25 >= 0.2.2 |
+| 벡터 연산 | numpy >= 1.26.0 |
+| 벡터 DB (선택) | lancedb >= 0.6.0 |
+| 임베딩 API | Voyage AI (voyage-3) via httpx |
 | 데이터 검증 | pydantic >= 2.0, pydantic-settings >= 2.0 |
 | 설정 파일 | pyyaml >= 6.0 |
-| API 서버 (선택) | fastapi >= 0.115.0, uvicorn >= 0.32.0 |
-| 벡터 검색 (선택) | chromadb >= 0.5.0, sentence-transformers >= 3.0 |
 | 테스트 | pytest >= 8.0, pytest-asyncio >= 0.24, pytest-cov >= 5.0 |
 | 린트 | ruff >= 0.8.0 |
 | 타입 체크 | mypy >= 1.13 |
@@ -55,7 +95,7 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 
 ### 요구사항
 
-**필수 요구사항 없음!** 🎉
+**필수 요구사항 없음!**
 
 설치 스크립트가 다음을 자동으로 설치합니다:
 - Python 3.12 (없을 경우)
@@ -64,9 +104,7 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 - Node.js (Claude Code를 위해)
 - Claude Code CLI (선택)
 
-### 🚀 완전 자동 설치 (최고 권장)
-
-**아무것도 설치되어 있지 않아도 됩니다!**
+### 완전 자동 설치 (권장)
 
 ```bash
 # macOS/Linux에서 원격 설치
@@ -87,15 +125,15 @@ cd autonomous-dev-agent
 ```
 
 설치 스크립트가 자동으로:
-- ✅ **Git 설치** (없을 경우)
-- ✅ **Python 3.12 설치** (없거나 버전이 낮을 경우)
-- ✅ **Node.js 설치** (없을 경우)
-- ✅ **uv 패키지 매니저 설치**
-- ✅ **Claude Code 설치** (선택)
-- ✅ 가상환경 생성
-- ✅ 의존성 설치
-- ✅ .env 파일 생성
-- ✅ 설치 검증 및 테스트 실행
+- Git 설치 (없을 경우)
+- Python 3.12 설치 (없거나 버전이 낮을 경우)
+- Node.js 설치 (없을 경우)
+- uv 패키지 매니저 설치
+- Claude Code 설치 (선택)
+- 가상환경 생성
+- 의존성 설치
+- .env 파일 생성
+- 설치 검증 및 테스트 실행
 
 ### 수동 설치
 
@@ -108,7 +146,7 @@ cd autonomous-dev-agent
 uv sync
 ```
 
-RAG 벡터 검색 기능도 함께 설치하려면:
+RAG 벡터 DB(LanceDB) 기능도 함께 설치하려면:
 
 ```bash
 uv sync --extra rag
@@ -120,13 +158,15 @@ uv sync --extra rag
 cp .env.example .env
 ```
 
-`.env` 파일을 열어 `ANTHROPIC_API_KEY`를 입력합니다.
+`.env` 파일을 열어 필요한 키를 입력합니다:
 
 ```dotenv
+# 필수: Anthropic API 키 (없으면 Claude Code 세션 자동 사용)
 ANTHROPIC_API_KEY=sk-ant-your-key-here
-```
 
-`ANTHROPIC_API_KEY`가 없으면 Claude Code 세션(claude CLI subscription)을 자동으로 사용합니다.
+# 선택: Voyage AI 임베딩 키 (없으면 BM25-only 모드로 동작)
+VOYAGE_API_KEY=pa-your-voyage-key-here
+```
 
 **3단계: CLI 명령어 설치**
 
@@ -134,34 +174,7 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 uv pip install -e .
 ```
 
-이제 `adev` 또는 `autonomous-dev` 명령어를 사용할 수 있습니다!
-
-### 실행
-
-**간단한 방법 (권장):**
-
-```bash
-# TUI 모드 실행 (스펙 대화부터 시작)
-adev
-
-# 프로젝트 경로 지정
-adev /path/to/project
-
-# 스펙 파일로 바로 시작
-adev /path/to/project spec.md
-```
-
-**또는 전체 경로:**
-
-```bash
-# TUI 모드
-uv run python -m src.ui.tui
-
-# CLI 모드 (TUI 없이)
-uv run python -m src.orchestrator.main spec.md
-```
-
-에이전트가 완성 조건(테스트 100%, 린트 0, 타입 에러 0, 빌드 성공)을 달성할 때까지 자율 반복합니다.
+이제 `adev` 또는 `autonomous-dev` 명령어를 사용할 수 있습니다.
 
 ---
 
@@ -200,8 +213,6 @@ uv run python -m src.orchestrator.main <spec_file>
 ./scripts/run.sh spec.md
 ```
 
-`spec_file`: 확정된 스펙이 담긴 텍스트 파일 경로.
-
 ### 완성 판단 기준
 
 Orchestrator는 아래 조건을 모두 만족할 때 완성으로 판단합니다.
@@ -229,9 +240,15 @@ autonomous-dev-agent/
 │   ├── agents/                    # Claude Agent SDK 실행 계층
 │   │   ├── executor.py            # AgentExecutor: 에이전트 라우팅 + 실행
 │   │   └── verifier.py            # Verifier: pytest/ruff/mypy/빌드 검증
-│   ├── rag/                       # RAG 코드 검색 시스템
-│   │   ├── indexer.py             # CodebaseIndexer: 텍스트 기반 코드 인덱싱
-│   │   └── mcp_server.py          # RAG MCP 서버: search_code, reindex_codebase 도구
+│   ├── rag/                       # RAG 코드 검색 시스템 (Phase 1 완성)
+│   │   ├── chunker.py             # ASTChunker: AST 기반 의미 단위 청킹
+│   │   ├── scorer.py              # BM25Scorer: IDF 가중치 렉시컬 스코어링
+│   │   ├── embedder.py            # AnthropicEmbedder: Voyage AI 임베딩 + 캐시
+│   │   ├── vector_store.py        # VectorStore: 코사인 유사도 검색 (NumpyStore/LanceDBStore)
+│   │   ├── hybrid_search.py       # HybridSearcher: BM25 + 벡터 가중 결합
+│   │   ├── incremental_indexer.py # IncrementalIndexer: mtime 기반 증분 인덱싱 + 싱글톤
+│   │   ├── mcp_server.py          # RAG MCP 서버: 5종 도구 제공
+│   │   └── indexer.py             # CodebaseIndexer: 레거시 (하위 호환용)
 │   ├── ui/
 │   │   └── tui/                   # Textual TUI
 │   │       ├── app.py             # AgentApp, SpecScreen, DevScreen
@@ -242,31 +259,31 @@ autonomous-dev-agent/
 │       ├── claude_client.py       # call_claude_for_text: API/SDK 공통 헬퍼
 │       └── logger.py              # setup_logger: 구조화된 로깅
 ├── tests/                         # 유닛 및 통합 테스트
-│   ├── test_executor.py
-│   ├── test_verifier.py
-│   ├── test_events.py
-│   ├── test_state.py
-│   ├── test_planner.py
-│   ├── test_issue_classifier.py
-│   ├── test_token_manager.py
-│   ├── test_indexer.py
-│   ├── test_mcp_server.py
-│   ├── test_main.py
-│   ├── test_spec_builder.py
-│   └── test_claude_client.py
+│   ├── test_chunker.py            # ASTChunker 단위 테스트
+│   ├── test_scorer.py             # BM25Scorer 단위 테스트
+│   ├── test_embedder.py           # AnthropicEmbedder 단위 테스트
+│   ├── test_vector_store.py       # VectorStore 단위 테스트
+│   ├── test_hybrid_search.py      # HybridSearcher 단위 테스트
+│   ├── test_incremental_indexer.py # IncrementalIndexer 단위 테스트
+│   ├── test_mcp_server.py         # MCP 서버 단위 테스트
+│   └── ...                        # 기타 모듈 테스트
 ├── docs/
+│   ├── api/                       # API 레퍼런스 문서
+│   │   ├── README.md              # API 문서 인덱스
+│   │   └── modules/               # 모듈별 상세 API
 │   ├── architecture/              # 아키텍처 설계 문서
-│   └── setup/                     # 개발 환경 설정 가이드
+│   │   ├── overview.md            # 시스템 전체 아키텍처
+│   │   └── design-decisions.md    # 설계 결정 근거
+│   ├── setup/                     # 개발 환경 설정 가이드
+│   │   └── development.md         # 개발 환경 설정
+│   └── phase1/                    # Phase 1 설계 문서
+│       └── architecture.md        # Phase 1 RAG 아키텍처 설계
 ├── .claude/
 │   ├── settings.json              # Agent Teams 활성화, 권한 설정
 │   ├── skills/                    # RAG 검색용 코딩 가이드라인 (6종)
-│   │   ├── design-patterns/
-│   │   ├── code-standards/
-│   │   ├── error-handling/
-│   │   ├── testing-strategy/
-│   │   ├── project-architecture/
-│   │   └── rag-search/
 │   └── agents/                    # 서브에이전트 역할 정의 (5종)
+├── config/
+│   └── default.yaml               # 기본 설정값
 ├── pyproject.toml
 ├── .env.example
 └── spec.md                        # 개발할 프로젝트 스펙 (사용자 작성)
@@ -279,6 +296,7 @@ autonomous-dev-agent/
 | 변수명 | 필수 여부 | 설명 |
 |--------|-----------|------|
 | `ANTHROPIC_API_KEY` | 선택 | Anthropic API 키. 없으면 Claude Code 세션을 사용합니다. |
+| `VOYAGE_API_KEY` | 선택 | Voyage AI 임베딩 API 키. 없으면 BM25-only 모드로 동작합니다. |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | 선택 | `1`로 설정하면 Agent Teams 기능을 활성화합니다. `settings.json`에 이미 설정되어 있습니다. |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | 선택 | 서브에이전트 모델 ID. 기본값은 `claude-sonnet-4-6`입니다. |
 
@@ -299,8 +317,19 @@ uv run pytest tests/ -v --cov
 # 커버리지 상세 보고
 uv run pytest tests/ -v --cov=src --cov-report=term-missing
 
+# RAG 모듈 테스트만
+uv run pytest tests/test_chunker.py tests/test_scorer.py tests/test_embedder.py \
+    tests/test_vector_store.py tests/test_hybrid_search.py \
+    tests/test_incremental_indexer.py tests/test_mcp_server.py -v
+
 # 특정 모듈 테스트
-uv run pytest tests/test_executor.py -v
+uv run pytest tests/test_chunker.py -v
+
+# 린트
+uv run ruff check src/
+
+# 타입 체크
+uv run mypy src/
 ```
 
 TUI 코드(`src/ui/`)는 Textual 앱 구동이 필요하므로 자동화 테스트 대상에서 제외됩니다(`pyproject.toml`의 `tool.coverage.run.omit` 참조).
@@ -316,29 +345,6 @@ Agent Teams는 **자동으로 활성화**됩니다:
 1. **설치 시 자동 설정**: `install.sh`가 `.env` 파일에 필수 환경 변수를 자동으로 추가합니다
 2. **자동 로딩**: CLI 실행 시 `.env` 파일이 자동으로 로드됩니다 (python-dotenv 사용)
 3. **다중 설정**: `.env` 파일과 `.claude/settings.json` 모두에 Agent Teams 설정이 포함됩니다
-
-**확인 방법:**
-
-```bash
-# CLI 실행 시 로그 확인
-adev
-
-# 출력 예시:
-# ✅ Agent Teams 활성화됨
-#    서브에이전트 모델: claude-sonnet-4-6
-```
-
-### 환경 변수
-
-`.env` 파일에 다음 환경 변수가 설정됩니다:
-
-```dotenv
-# Agent Teams 활성화
-CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-
-# 서브에이전트 모델 (비용 절감)
-CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-4-6
-```
 
 ### 에이전트 라우팅
 

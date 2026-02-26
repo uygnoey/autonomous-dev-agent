@@ -6,6 +6,70 @@ Autonomous Dev Agent의 버전별 변경 이력.
 
 ---
 
+## [0.3.0] - 2026-02-26
+
+### Added (추가)
+
+**RAG 시스템 전면 재설계 (Phase 1)**
+
+- **ASTChunker** (`src/rag/chunker.py`): Python AST 기반 의미 단위 청킹
+  - `FunctionDef`, `AsyncFunctionDef`, `ClassDef` 경계 자동 추출
+  - chunk_type: `function`, `class`, `method`, `module`, `block`
+  - MIN_LINES(5) 미만 함수는 module 청크에 병합
+  - MAX_LINES(100) 초과 ClassDef는 메서드별 서브청킹
+  - SyntaxError 시 50줄 고정 + 10줄 오버랩 폴백
+  - 데코레이터 포함 시작 줄 번호 처리
+
+- **BM25Scorer** (`src/rag/scorer.py`): IDF 가중치 기반 렉시컬 스코어링
+  - rank-bm25 BM25Okapi 래핑 (K1=1.5, B=0.75)
+  - 코드 특화 토큰화: camelCase/snake_case 분리, 특수문자 제거
+  - `fit()`, `score()`, `top_k()` API
+
+- **AnthropicEmbedder** (`src/rag/embedder.py`): Voyage AI 임베딩 + 캐시
+  - Voyage AI `voyage-3` 모델 (1024차원)
+  - SHA256 기반 디스크 캐시 (`.rag_cache/embeddings.json`)
+  - 배치 분할 호출 (최대 96개/요청)
+  - 지수 백오프 재시도 (3회, 1s→2s→4s→30s 상한)
+  - API 실패 시 BM25-only 모드 graceful degradation
+
+- **VectorStore** (`src/rag/vector_store.py`): 코사인 유사도 검색
+  - `VectorStoreProtocol` (@runtime_checkable Protocol)
+  - `NumpyStore`: numpy 코사인 유사도 (인메모리, 기본값)
+  - `LanceDBStore`: ANN 검색 (디스크, lancedb 설치 시 자동 선택)
+  - `create_vector_store()` 팩토리 함수
+
+- **HybridSearcher** (`src/rag/hybrid_search.py`): BM25 + 벡터 하이브리드
+  - BM25(0.6) + 벡터(0.4) min-max 정규화 후 가중 합산
+  - over-fetch (top_k * 2) 후 재랭킹
+  - 벡터 검색 불가 시 BM25-only 자동 전환
+
+- **IncrementalIndexer** (`src/rag/incremental_indexer.py`): mtime 기반 증분 인덱싱
+  - `index()`: 최초 전체 인덱싱
+  - `update()`: mtime 비교 후 신규·수정·삭제 파일만 처리
+  - `search(query, top_k)`: HybridSearcher 위임
+  - 모듈 레벨 싱글톤 (`get_indexer()`, `reset_indexer()`)
+  - BM25 인덱스 pickle 직렬화 캐시
+
+- **MCP Server 확장** (`src/rag/mcp_server.py`): 5종 도구 제공
+  - 신규: `search_by_symbol` (이름 기반 심볼 검색, exact/prefix/contains 모드)
+  - 신규: `get_file_structure` (디렉토리 트리, 깊이 제한)
+  - 신규: `get_similar_patterns` (임베딩 기반 유사 코드 검색)
+  - 개선: `search_code` (하이브리드 검색으로 업그레이드)
+  - 개선: `reindex_codebase` (증분 인덱싱으로 업그레이드)
+
+### Fixed (수정)
+
+- **AnthropicEmbedder 캐시 버그**: 캐시 미스 결과를 `results` 배열에 병합할 때 인덱스 오프셋 오류 수정 (캐시 히트가 있을 때 임베딩 순서 보장)
+
+### Tested (테스트)
+
+- 단위 테스트 306개 — 7개 모듈 100% 통과
+- 모듈 QC 테스트 70,000개 — 경계값·엣지케이스 100% 통과
+- E2E 통합 테스트 35개 — 실제 프로젝트 코드베이스 대상 100% 통과
+- 총 **70,341개** 테스트 케이스 모두 통과
+
+---
+
 ## [0.2.0] - 2025-02-25
 
 ### 추가
