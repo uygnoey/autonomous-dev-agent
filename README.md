@@ -332,6 +332,29 @@ uv run ruff check src/
 uv run mypy src/
 ```
 
+### QC/QA 대용량 테스트 파일 생성
+
+대용량 테스트 케이스 파일(~5.5GB)은 Git에 포함되지 않습니다. 아래 스크립트로 생성하세요:
+
+```bash
+# QC 전체 모듈 테스트 케이스 생성 (70,000건)
+python tests/qc/generate_module_cases.py
+
+# QA E2E 테스트 케이스 생성 (100,000건)
+python tests/qa/generate_e2e_cases.py
+
+# 개별 모듈별 생성도 가능
+python tests/qc/generate_vector_store_cases.py
+python tests/qc/generate_hybrid_search_cases.py
+# ... (나머지 모듈)
+```
+
+생성되는 파일:
+- `tests/qc/*/test_cases.jsonl`: 각 모듈 입력 케이스 (10,000건)
+- `tests/qc/*/results.jsonl`: QC 실행 결과
+- `tests/qa/test_cases.jsonl`: E2E 통합 테스트 (100,000건)
+- `tests/qa/results.jsonl`: QA 실행 결과
+
 TUI 코드(`src/ui/`)는 Textual 앱 구동이 필요하므로 자동화 테스트 대상에서 제외됩니다(`pyproject.toml`의 `tool.coverage.run.omit` 참조).
 
 ---

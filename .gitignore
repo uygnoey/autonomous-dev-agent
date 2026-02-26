@@ -18,3 +18,9 @@ node_modules/
 .venv/
 *.DS_Store
 .vscode/
+
+# QC/QA 대용량 테스트 파일 (생성 스크립트로 재생성 가능)
+tests/qc/**/test_cases.jsonl
+tests/qc/**/results.jsonl
+tests/qa/test_cases.jsonl
+tests/qa/results.jsonl
