@@ -25,6 +25,7 @@ if [ ! -f .env ]; then
     else
         echo "ANTHROPIC_API_KEY=" > .env
     fi
+    chmod 600 .env
     echo "⚠️  .env 파일을 생성했습니다."
     echo "   ANTHROPIC_API_KEY (API 키 사용 시) 또는 claude init (subscription 사용 시) 중 선택:"
     echo "   - API 키: vim .env"
