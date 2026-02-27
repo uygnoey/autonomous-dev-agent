@@ -106,5 +106,5 @@ orchestrator:
         """인수 없이 호출하면 config/default.yaml을 읽는다."""
         result = load_config()
         # default.yaml의 실제 값과 일치하는지 확인
-        assert result.planning_model == "claude-sonnet-4-6"
+        assert result.planning_model == "claude-opus-4-6"
         assert result.max_iterations == 500
