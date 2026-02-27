@@ -107,31 +107,23 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 ### 완전 자동 설치 (권장)
 
 ```bash
-# macOS/Linux에서 원격 설치
-# TODO: USER/REPO를 실제 GitHub username/repository로 교체하세요
-curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
-
-# 또는 wget 사용
-wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+# macOS/Linux 원클릭 설치
+curl -fsSL https://raw.githubusercontent.com/uygnoey/autonomous-dev-agent/main/scripts/install.sh | bash
 ```
 
 **Git이 이미 있다면:**
 
 ```bash
-# TODO: <repo-url>을 실제 GitHub 저장소 URL로 교체하세요
-git clone <repo-url>
+git clone https://github.com/uygnoey/autonomous-dev-agent.git
 cd autonomous-dev-agent
 ./scripts/install.sh
 ```
 
 설치 스크립트가 자동으로:
-- Git 설치 (없을 경우)
-- Python 3.12 설치 (없거나 버전이 낮을 경우)
-- Node.js 설치 (없을 경우)
-- uv 패키지 매니저 설치
+- Git, Python 3.12, Node.js, uv 설치 (없을 경우)
 - Claude Code 설치 (선택)
-- 가상환경 생성
-- 의존성 설치
+- 가상환경 생성 + 의존성 설치
+- **adev CLI 전역 등록** (어디서든 `adev` 실행 가능)
 - .env 파일 생성
 - 설치 검증 및 테스트 실행
 
@@ -140,8 +132,7 @@ cd autonomous-dev-agent
 **1단계: 의존성 설치**
 
 ```bash
-# TODO: <repo-url>을 실제 GitHub 저장소 URL로 교체하세요
-git clone <repo-url>
+git clone https://github.com/uygnoey/autonomous-dev-agent.git
 cd autonomous-dev-agent
 uv sync
 ```

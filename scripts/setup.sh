@@ -20,7 +20,11 @@ fi
 
 # 3. .env 파일 확인
 if [ ! -f .env ]; then
-    cp .env.example .env
+    if [ -f .env.example ]; then
+        cp .env.example .env
+    else
+        echo "ANTHROPIC_API_KEY=" > .env
+    fi
     echo "⚠️  .env 파일을 생성했습니다."
     echo "   ANTHROPIC_API_KEY (API 키 사용 시) 또는 claude init (subscription 사용 시) 중 선택:"
     echo "   - API 키: vim .env"

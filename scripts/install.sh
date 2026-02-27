@@ -2,14 +2,14 @@
 # 원클릭 설치 스크립트 - 모든 필수 요구사항 자동 설치
 # 사용법:
 #   1. git clone 후: cd autonomous-dev-agent && ./scripts/install.sh
-#   2. 원격 설치: curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
-#   3. 또는: wget -qO- https://raw.githubusercontent.com/USER/REPO/main/scripts/install.sh | bash
+#   2. 원격 설치: curl -fsSL https://raw.githubusercontent.com/uygnoey/autonomous-dev-agent/main/scripts/install.sh | bash
+#   3. 또는: wget -qO- https://raw.githubusercontent.com/uygnoey/autonomous-dev-agent/main/scripts/install.sh | bash
 
 set -e
 
 PROJECT_NAME="autonomous-dev-agent"
 PYTHON_VERSION="3.12"
-REPO_URL="https://github.com/USER/REPO.git"  # 실제 GitHub 저장소 URL로 교체 필요
+REPO_URL="https://github.com/uygnoey/autonomous-dev-agent.git"
 INSTALL_DIR="$HOME/$PROJECT_NAME"
 
 # 색상 정의
@@ -343,23 +343,50 @@ install_claude_code
 echo ""
 
 # ============================================================================
-# 6. CLI 명령어 등록
+# 6. CLI 명령어 전역 등록
 # ============================================================================
-echo -e "${BLUE}━━━ [6/8] CLI 명령어 등록 ━━━${NC}"
+echo -e "${BLUE}━━━ [6/8] CLI 명령어 전역 등록 ━━━${NC}"
 
-echo -e "${YELLOW}📦 adev 명령어 설치 중...${NC}"
+echo -e "${YELLOW}📦 adev 명령어를 시스템 전역으로 설치 중...${NC}"
 
-# CLI 바이너리 위치 확인
-VENV_BIN="$PROJECT_DIR/.venv/bin"
-if [ -d "$VENV_BIN" ]; then
-    if [ -f "$VENV_BIN/adev" ]; then
-        echo -e "${GREEN}✅ adev 명령어 등록 완료${NC}"
-        echo -e "${CYAN}   실행: adev 또는 autonomous-dev${NC}"
-    else
-        echo -e "${YELLOW}⚠️  명령어 등록 실패. 'uv run python -m src.cli' 사용${NC}"
-    fi
+# uv tool 또는 pip으로 시스템 전역 설치
+if command -v uv &> /dev/null && uv tool install -e "$PROJECT_DIR" 2>/dev/null; then
+    echo -e "${GREEN}✅ adev 전역 설치 완료 (uv tool)${NC}"
+elif pip install --user -e "$PROJECT_DIR" 2>/dev/null; then
+    echo -e "${GREEN}✅ adev 전역 설치 완료 (pip --user)${NC}"
+elif pip3 install --user -e "$PROJECT_DIR" 2>/dev/null; then
+    echo -e "${GREEN}✅ adev 전역 설치 완료 (pip3 --user)${NC}"
 else
-    echo -e "${YELLOW}⚠️  가상환경 bin 디렉토리를 찾을 수 없습니다.${NC}"
+    # pip 전역 설치 실패 시 PATH에 가상환경 bin 추가
+    echo -e "${YELLOW}⚠️  pip 전역 설치 실패. PATH에 가상환경 추가합니다.${NC}"
+    VENV_BIN="$PROJECT_DIR/.venv/bin"
+
+    SHELL_RC=""
+    if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zshrc" ]; then
+        SHELL_RC="$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+        SHELL_RC="$HOME/.bashrc"
+    elif [ -f "$HOME/.bash_profile" ]; then
+        SHELL_RC="$HOME/.bash_profile"
+    fi
+
+    if [ -n "$SHELL_RC" ]; then
+        if ! grep -q "$VENV_BIN" "$SHELL_RC" 2>/dev/null; then
+            echo "" >> "$SHELL_RC"
+            echo "# Autonomous Dev Agent CLI" >> "$SHELL_RC"
+            echo "export PATH=\"$VENV_BIN:\$PATH\"" >> "$SHELL_RC"
+            echo -e "${GREEN}✅ PATH 추가 완료: $SHELL_RC${NC}"
+            echo -e "${YELLOW}   새 터미널에서 adev 명령어를 사용할 수 있습니다.${NC}"
+        fi
+    fi
+fi
+
+# 설치 확인
+if command -v adev &> /dev/null; then
+    echo -e "${GREEN}✅ adev 명령어 사용 가능${NC}"
+    echo -e "${CYAN}   어디서든 실행: adev 또는 autonomous-dev${NC}"
+else
+    echo -e "${YELLOW}   새 터미널을 열면 adev 명령어를 사용할 수 있습니다.${NC}"
 fi
 echo ""
 
