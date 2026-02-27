@@ -67,6 +67,10 @@ python_functions = ["test_*"]
 [tool.coverage.run]
 omit = []
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
