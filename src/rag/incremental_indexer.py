@@ -16,6 +16,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+try:
+    import pathspec
+    _PATHSPEC_AVAILABLE = True
+except ImportError:
+    _PATHSPEC_AVAILABLE = False
+
 from src.core.domain import CodeChunk
 from src.core.interfaces import ChunkerProtocol
 from src.rag.embedder import AnthropicEmbedder
@@ -66,6 +72,15 @@ class IncrementalIndexer:
     이후 update() 호출 시 변경된 파일만 재인덱싱한다.
 
     의존성 주입으로 모든 컴포넌트를 외부에서 받아 테스트 용이성을 보장한다.
+
+    .gitignore 패턴 준수:
+        프로젝트 루트의 .gitignore가 있으면 pathspec으로 파싱하여 해당 패턴과
+        일치하는 파일을 인덱싱에서 제외한다. .gitignore가 없으면 하드코딩된
+        IGNORED_DIRS 기반 필터만 적용한다.
+
+    설정 기반 패턴 필터링:
+        RAGSettings.include_patterns / exclude_patterns 으로 사용자 정의 glob
+        패턴을 추가할 수 있다. exclude_patterns에 매칭되면 .gitignore와 무관하게 제외된다.
     """
 
     def __init__(
@@ -76,15 +91,23 @@ class IncrementalIndexer:
         embedder: AnthropicEmbedder,
         project_path: str,
         cache_dir: str = ".rag_cache",
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
     ) -> None:
         """
+        KR: 증분 인덱서를 초기화한다.
+        EN: Initialize the incremental indexer.
+
         Args:
-            chunker: 파일을 CodeChunk로 분할하는 청커
-            scorer: BM25 스코어러
-            store: 벡터 저장소
-            embedder: 텍스트 임베딩기
-            project_path: 인덱싱할 프로젝트 루트 경로
-            cache_dir: 캐시 파일 저장 디렉토리 (기본 ".rag_cache")
+            chunker: 파일을 CodeChunk로 분할하는 청커 / File-to-CodeChunk splitter
+            scorer: BM25 스코어러 / BM25 scorer
+            store: 벡터 저장소 / Vector store
+            embedder: 텍스트 임베딩기 / Text embedder
+            project_path: 인덱싱할 프로젝트 루트 경로 / Project root path to index
+            cache_dir: 캐시 파일 저장 디렉토리 (기본 ".rag_cache") / Cache directory
+            include_patterns: 추가 포함 glob 패턴 목록 (None이면 기본값 사용) /
+                              Extra include glob patterns (None uses defaults)
+            exclude_patterns: 추가 제외 glob 패턴 목록 / Extra exclude glob patterns
         """
         self._chunker = chunker
         self._scorer = scorer
@@ -92,6 +115,20 @@ class IncrementalIndexer:
         self._embedder = embedder
         self._project_path = Path(project_path)
         self._cache_dir = self._project_path / cache_dir
+        self._include_patterns: list[str] = include_patterns or []
+        self._exclude_patterns: list[str] = exclude_patterns or []
+
+        # .gitignore pathspec (None이면 미적용)
+        self._gitignore_spec: pathspec.PathSpec | None = _load_gitignore_spec(  # type: ignore[name-defined]
+            self._project_path
+        ) if _PATHSPEC_AVAILABLE else None
+
+        # 사용자 정의 제외 패턴 spec (None이면 미적용)
+        self._exclude_spec: pathspec.PathSpec | None = (  # type: ignore[name-defined]
+            _build_pathspec(self._exclude_patterns)
+            if _PATHSPEC_AVAILABLE and self._exclude_patterns
+            else None
+        )
 
         # 인덱싱된 전체 청크 목록 (search에서 활용)
         self._all_chunks: list[CodeChunk] = []
@@ -276,10 +313,22 @@ class IncrementalIndexer:
     def _collect_files(self) -> list[Path]:
         """지원 확장자의 파일을 수집한다.
 
-        IGNORED_DIRS에 속하거나 BINARY_EXTENSIONS인 파일은 제외한다.
+        KR: 다음 순서로 파일을 필터링한다:
+            1. IGNORED_DIRS 하드코딩 제외
+            2. BINARY_EXTENSIONS 제외
+            3. .gitignore 패턴 매칭 제외 (pathspec 사용 가능 시)
+            4. 사용자 정의 exclude_patterns 제외
+            5. SUPPORTED_EXTENSIONS 또는 include_patterns 에 매칭되는 파일만 포함
+
+        EN: Files are filtered in this order:
+            1. Hard-coded IGNORED_DIRS exclusion
+            2. BINARY_EXTENSIONS exclusion
+            3. .gitignore pattern matching (when pathspec is available)
+            4. User-defined exclude_patterns exclusion
+            5. Only include files matching SUPPORTED_EXTENSIONS or include_patterns
 
         Returns:
-            인덱싱 대상 파일 경로 목록
+            인덱싱 대상 파일 경로 목록 / List of file paths to index
         """
         files: list[Path] = []
         for path in self._project_path.rglob("*"):
@@ -289,9 +338,60 @@ class IncrementalIndexer:
                 continue
             if path.suffix in BINARY_EXTENSIONS:
                 continue
+
+            # .gitignore 패턴 필터링
+            if self._is_gitignored(path):
+                continue
+
+            # 사용자 정의 exclude_patterns 필터링
+            if self._is_excluded(path):
+                continue
+
             if path.suffix in SUPPORTED_EXTENSIONS:
                 files.append(path)
         return files
+
+    def _is_gitignored(self, path: Path) -> bool:
+        """경로가 .gitignore 패턴에 매칭되는지 확인한다.
+
+        KR: pathspec 라이브러리가 없거나 .gitignore가 없으면 항상 False를 반환한다.
+        EN: Returns False if pathspec is unavailable or no .gitignore exists.
+
+        Args:
+            path: 확인할 파일 경로 / File path to check
+
+        Returns:
+            .gitignore에 매칭되면 True, 아니면 False /
+            True if matched by .gitignore, False otherwise
+        """
+        if self._gitignore_spec is None:
+            return False
+        try:
+            relative = path.relative_to(self._project_path)
+        except ValueError:
+            return False
+        return bool(self._gitignore_spec.match_file(str(relative)))
+
+    def _is_excluded(self, path: Path) -> bool:
+        """경로가 사용자 정의 exclude_patterns에 매칭되는지 확인한다.
+
+        KR: exclude_patterns가 비어있거나 pathspec이 없으면 항상 False를 반환한다.
+        EN: Returns False if exclude_patterns is empty or pathspec is unavailable.
+
+        Args:
+            path: 확인할 파일 경로 / File path to check
+
+        Returns:
+            exclude_patterns에 매칭되면 True, 아니면 False /
+            True if matched by exclude_patterns, False otherwise
+        """
+        if self._exclude_spec is None:
+            return False
+        try:
+            relative = path.relative_to(self._project_path)
+        except ValueError:
+            return False
+        return bool(self._exclude_spec.match_file(str(relative)))
 
     def _chunk_file(self, file_path: Path) -> list[CodeChunk]:
         """단일 파일을 청킹한다.
@@ -464,6 +564,59 @@ class IncrementalIndexer:
 
 
 # ------------------------------------------------------------------
+# .gitignore / 패턴 헬퍼
+# ------------------------------------------------------------------
+
+
+def _load_gitignore_spec(project_path: Path) -> pathspec.PathSpec | None:
+    """프로젝트 루트의 .gitignore를 파싱하여 PathSpec을 반환한다.
+
+    KR: pathspec 라이브러리를 사용하여 .gitignore 패턴을 파싱한다.
+        .gitignore 파일이 없거나 읽기에 실패하면 None을 반환한다.
+    EN: Parses the project root .gitignore using the pathspec library.
+        Returns None if .gitignore is missing or cannot be read.
+
+    Args:
+        project_path: 프로젝트 루트 경로 / Project root path
+
+    Returns:
+        파싱된 PathSpec 인스턴스, 실패 시 None /
+        Parsed PathSpec instance, or None on failure
+    """
+    if not _PATHSPEC_AVAILABLE:
+        return None
+
+    gitignore_path = project_path / ".gitignore"
+    if not gitignore_path.exists():
+        return None
+
+    try:
+        lines = gitignore_path.read_text(encoding="utf-8").splitlines()
+        return pathspec.PathSpec.from_lines("gitignore", lines)
+    except (OSError, Exception) as exc:
+        logger.warning(f".gitignore 파싱 실패 ({exc}), gitignore 필터 비활성화")
+        return None
+
+
+def _build_pathspec(patterns: list[str]) -> pathspec.PathSpec | None:
+    """glob 패턴 목록에서 PathSpec을 생성한다.
+
+    KR: 빈 목록이거나 pathspec이 없으면 None을 반환한다.
+    EN: Returns None if patterns list is empty or pathspec is unavailable.
+
+    Args:
+        patterns: glob 패턴 목록 / List of glob patterns
+
+    Returns:
+        생성된 PathSpec 인스턴스, 실패 시 None /
+        Built PathSpec instance, or None on failure
+    """
+    if not _PATHSPEC_AVAILABLE or not patterns:
+        return None
+    return pathspec.PathSpec.from_lines("gitignore", patterns)
+
+
+# ------------------------------------------------------------------
 # 싱글톤 패턴
 # ------------------------------------------------------------------
 
@@ -500,14 +653,20 @@ def reset_indexer() -> None:
 def _build_indexer(project_path: str) -> IncrementalIndexer:
     """기본 컴포넌트 조합으로 IncrementalIndexer를 생성한다.
 
+    KR: RAGSettings에서 include_patterns / exclude_patterns를 읽어 인덱서에 전달한다.
+    EN: Reads include_patterns / exclude_patterns from RAGSettings and passes them to the indexer.
+
     Args:
-        project_path: 인덱싱할 프로젝트 루트 경로
+        project_path: 인덱싱할 프로젝트 루트 경로 / Project root path to index
 
     Returns:
-        의존성이 주입된 IncrementalIndexer 인스턴스
+        의존성이 주입된 IncrementalIndexer 인스턴스 /
+        IncrementalIndexer instance with injected dependencies
     """
+    from src.infra.config import get_settings
     from src.rag.chunker import ASTChunker
 
+    settings = get_settings()
     chunker = ASTChunker()
     scorer = BM25Scorer()
     store = create_vector_store()
@@ -519,4 +678,6 @@ def _build_indexer(project_path: str) -> IncrementalIndexer:
         store=store,
         embedder=embedder,
         project_path=project_path,
+        include_patterns=settings.rag.include_patterns,
+        exclude_patterns=settings.rag.exclude_patterns,
     )

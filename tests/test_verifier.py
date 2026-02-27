@@ -6,23 +6,7 @@ import pytest
 from claude_agent_sdk import AssistantMessage, TextBlock
 
 from src.agents.verifier import Verifier
-
-
-def make_mock_query(*messages):
-    """테스트용 비동기 제너레이터 팩토리."""
-    async def _mock(*args, **kwargs):
-        for msg in messages:
-            yield msg
-    return _mock
-
-
-def make_assistant_message_with_text(text: str) -> AssistantMessage:
-    """텍스트가 있는 AssistantMessage mock."""
-    mock_block = MagicMock(spec=TextBlock)
-    mock_block.text = text
-    mock_msg = MagicMock(spec=AssistantMessage)
-    mock_msg.content = [mock_block]
-    return mock_msg
+from tests.conftest import make_assistant_message as make_assistant_message_with_text, make_mock_query
 
 
 class TestVerifier:

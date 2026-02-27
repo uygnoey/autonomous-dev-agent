@@ -1,14 +1,16 @@
-"""AnthropicEmbedder 유닛 테스트.
+"""AnthropicEmbedder 유닛 테스트 / AnthropicEmbedder Unit Tests.
 
-테스트 대상: src/rag/embedder.py — AnthropicEmbedder 클래스
-커버리지 목표: 90% 이상
+테스트 대상 / Test Target:
+    src/rag/embedder.py — AnthropicEmbedder 클래스 / AnthropicEmbedder class
 
-테스트 케이스:
+커버리지 목표 / Coverage Target: 90% 이상 / 90% or higher
+
+테스트 케이스 / Test Cases:
 1. API 호출 mock (Voyage AI httpx.AsyncClient)
 2. 배치 분할 로직 (96개 초과 시 자동 분할)
 3. 캐시 히트/미스
-4. 에러 시 graceful degradation
-5. API 키 없음 (SDK 폴백 모드)
+4. 에러 시 graceful degradation (API 호출 실패 시 빈 임베딩 반환 + 경고 로깅)
+5. API 키 없음 (SDK 폴백 모드) — BM25 폴백 동작 + fallback_mode 속성 + 경고 로깅
 """
 
 from __future__ import annotations
@@ -657,6 +659,74 @@ class TestGracefulDegradation:
         # Assert
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_api_failure_logs_warning_and_returns_empty(
+        self, embedder: AnthropicEmbedder
+    ) -> None:
+        """API 호출 실패 시 경고 로그를 출력하고 빈 임베딩을 반환하는지 검증.
+
+        KR: graceful degradation 핵심 시나리오 — 빈 리스트 반환 + 로깅 확인
+        EN: Core graceful degradation scenario — verify empty list return + warning log
+        """
+        # Arrange — 네트워크 오류로 모든 재시도 실패
+        network_error = httpx.RequestError("connection timeout")
+
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("asyncio.sleep", new_callable=AsyncMock), \
+             patch("src.rag.embedder.logger") as mock_logger:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=network_error)
+            mock_client_cls.return_value = mock_client
+
+            # Act
+            result = await embedder.embed(["failure text"])
+
+        # Assert: 빈 리스트 반환 + error 로그 호출됨
+        assert result == []
+        assert embedder.is_available is False
+        assert embedder.fallback_mode is True
+        # 최종 실패 에러 로그 확인
+        mock_logger.error.assert_called()
+        error_call_args = mock_logger.error.call_args[0][0]
+        assert "재시도 후 실패" in error_call_args or "permanently failed" in error_call_args
+
+    @pytest.mark.asyncio
+    async def test_4xx_error_logs_warning_and_activates_fallback(
+        self, embedder: AnthropicEmbedder
+    ) -> None:
+        """4xx 에러 시 경고 로그를 출력하고 BM25 폴백 모드로 전환되는지 검증.
+
+        KR: 클라이언트 오류 발생 시 즉시 fallback_mode=True로 전환됨을 확인
+        EN: Verify immediate fallback_mode=True transition on client error
+        """
+        # Arrange — 401 Unauthorized 응답
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 401
+        mock_resp.headers = {}
+        http_error = httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
+        mock_resp.raise_for_status.side_effect = http_error
+
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("src.rag.embedder.logger") as mock_logger:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value = mock_client
+
+            # Act
+            result = await embedder.embed(["auth error text"])
+
+        # Assert: 빈 리스트 + fallback_mode=True + error 로그
+        assert result == []
+        assert embedder.is_available is False
+        assert embedder.fallback_mode is True
+        mock_logger.error.assert_called()
+        error_call_args = mock_logger.error.call_args[0][0]
+        assert "BM25 폴백" in error_call_args or "BM25 fallback" in error_call_args
+
 
 # ---------------------------------------------------------------------------
 # 5. API 키 없음 (SDK 폴백 모드) 테스트
@@ -757,6 +827,105 @@ class TestNoApiKeyFallback:
 
             # Assert: 캐시 히트 → API 호출 없이 반환
             assert result == [cached_vec]
+        finally:
+            for key, val in env_backup.items():
+                if val is not None:
+                    os.environ[key] = val
+
+    def test_no_api_key_sets_fallback_mode_true(self, tmp_cache: Path) -> None:
+        """API 키 없을 때 fallback_mode가 True로 설정되는지 검증.
+
+        KR:
+            subscription 환경(API 키 없음)에서 자동으로 BM25 폴백 모드가
+            활성화되었는지 확인한다. fallback_mode=True는 호출측에서
+            벡터 검색 대신 BM25만 사용해야 함을 나타낸다.
+
+        EN:
+            Verifies that BM25 fallback mode is automatically activated in
+            subscription environments (no API key). fallback_mode=True signals
+            to the caller that only BM25 should be used instead of vector search.
+        """
+        # Arrange
+        import os
+        env_backup = {}
+        for key in ("VOYAGE_API_KEY", "ANTHROPIC_API_KEY"):
+            env_backup[key] = os.environ.pop(key, None)
+
+        try:
+            # Act
+            embedder = AnthropicEmbedder(cache_path=str(tmp_cache))
+
+            # Assert: fallback_mode=True, is_available=False
+            assert embedder.fallback_mode is True
+            assert embedder.is_available is False
+        finally:
+            for key, val in env_backup.items():
+                if val is not None:
+                    os.environ[key] = val
+
+    def test_no_api_key_logs_warning_on_init(self, tmp_cache: Path) -> None:
+        """API 키 없이 초기화 시 경고 로그가 출력되는지 검증.
+
+        KR:
+            subscription 환경에서 AnthropicEmbedder 생성 시 경고 로그를 통해
+            BM25 폴백 모드 전환을 명확히 알리는지 확인한다.
+
+        EN:
+            Verifies that a warning log clearly announces the BM25 fallback mode
+            transition when AnthropicEmbedder is created in a subscription environment.
+        """
+        # Arrange
+        import os
+        env_backup = {}
+        for key in ("VOYAGE_API_KEY", "ANTHROPIC_API_KEY"):
+            env_backup[key] = os.environ.pop(key, None)
+
+        try:
+            with patch("src.rag.embedder.logger") as mock_logger:
+                # Act
+                AnthropicEmbedder(cache_path=str(tmp_cache))
+
+            # Assert: 초기화 시 warning 로그 호출됨
+            mock_logger.warning.assert_called()
+            warning_call_args = mock_logger.warning.call_args[0][0]
+            # 경고 메시지에 BM25 폴백 관련 내용 포함 확인
+            assert "BM25" in warning_call_args
+            assert "폴백" in warning_call_args or "fallback" in warning_call_args.lower()
+        finally:
+            for key, val in env_backup.items():
+                if val is not None:
+                    os.environ[key] = val
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_embed_logs_warning(self, tmp_cache: Path) -> None:
+        """API 키 없을 때 embed() 호출 시 경고 로그가 출력되는지 검증.
+
+        KR:
+            subscription 폴백 모드에서 embed() 호출 시 API 키 없음 경고를
+            로깅하는지 확인한다.
+
+        EN:
+            Verifies that embed() logs a warning about missing API key
+            when called in subscription fallback mode.
+        """
+        # Arrange
+        import os
+        env_backup = {}
+        for key in ("VOYAGE_API_KEY", "ANTHROPIC_API_KEY"):
+            env_backup[key] = os.environ.pop(key, None)
+
+        try:
+            embedder = AnthropicEmbedder(cache_path=str(tmp_cache))
+
+            with patch("src.rag.embedder.logger") as mock_logger:
+                # Act
+                result = await embedder.embed(["no key text"])
+
+            # Assert: 빈 리스트 반환 + warning 로그 호출됨
+            assert result == []
+            mock_logger.warning.assert_called()
+            warning_call_args = mock_logger.warning.call_args[0][0]
+            assert "API 키" in warning_call_args or "API key" in warning_call_args.lower()
         finally:
             for key, val in env_backup.items():
                 if val is not None:

@@ -1,10 +1,10 @@
 # autonomous-dev-agent 개편 TODO
 
 > **전체 계획**: `.claude/plans/ancient-sleeping-petal.md` 참조
-> **마지막 업데이트**: 2026-02-26
-> **현재 상태**: Phase 0 완료, Phase 1 착수 전
+> **마지막 업데이트**: 2026-02-27
+> **현재 상태**: Phase 0 완료, Phase 1 대부분 완료 (미완료 6개), Phase 2 착수 전
 > **프로젝트 버전**: v0.2.0
-> **소스 현황**: 34개 파일, 4,028줄 (src/), 238개 테스트, 100% 커버리지
+> **소스 현황**: 40개 파일, src/, 561개 테스트, QA/QC ALL PASS
 
 ---
 
@@ -307,6 +307,153 @@
 - [x] BM25가 기존 Boolean BoW보다 관련 파일을 상위에 반환하는지 수동 검증
 - [x] 증분 인덱싱: 파일 수정 후 변경분만 처리되는지 확인
 - [x] MCP 서버 새 도구 3개 동작 확인
+
+---
+
+## Phase 1.5: Agent Teams 통합 — TODO (신규)
+
+> **핵심 문제**: executor.py가 Agent SDK의 query()로 단일 에이전트만 순차 실행. Agent Teams 미사용.
+> **목표**: Orchestrator가 TeamCreate/Task/SendMessage 기반으로 에이전트 팀을 생성하고 병렬 협업
+
+### 현재 상태 (AS-IS)
+```
+Orchestrator → AgentExecutor.execute() → claude_agent_sdk.query() → 단일 에이전트 순차 실행
+```
+- settings.json에 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 설정은 되어 있음
+- `.claude/agents/` 에 7개 에이전트 정의 파일 존재 (architect, coder, tester, reviewer, qa, qc, documenter)
+- 하지만 실제 코드에서 TeamCreate, Task, SendMessage 등 Agent Teams API 사용 없음
+- 환경변수 확인 후 로깅만 함 (executor.py:306-314)
+
+### 목표 상태 (TO-BE)
+```
+Orchestrator
+  └→ TeamManager.create_team()
+       ├→ architect (설계 → docs/architecture/)
+       ├→ coder (구현 → src/)
+       ├→ tester (테스트 → tests/)
+       ├→ reviewer (리뷰 → 피드백)
+       ├→ qa (품질 보증 → 예방적 검증)
+       ├→ qc (품질 검증 → 대량 테스트)
+       └→ documenter (문서 → docs/)
+  └→ TaskList로 작업 분배/추적
+  └→ SendMessage로 에이전트 간 통신
+```
+
+### 1.5-1. `src/agents/team_manager.py` — Agent Teams 관리자 (신규)
+
+> Orchestrator와 Agent Teams 사이의 중간 계층
+
+- [ ] `TeamManager` 클래스 구현:
+  - [ ] `create_team(project_path: str) → TeamConfig`
+    - TeamCreate API로 팀 생성
+    - CLAUDE.md에 정의된 7개 에이전트 역할로 팀 구성
+    - 팀 설정 파일 생성 (~/.claude/teams/{project-name}/)
+  - [ ] `spawn_agent(agent_type: AgentType, task: str) → AgentHandle`
+    - Task 도구로 서브에이전트 스폰
+    - `.claude/agents/{type}.md` 정의 참조
+    - subagent_type 매핑 (architect→Plan, coder→general-purpose, tester→quality-engineer 등)
+  - [ ] `assign_task(agent_name: str, task: AgentTask) → TaskID`
+    - TaskCreate + TaskUpdate로 작업 할당
+  - [ ] `broadcast(message: str)` — 전체 에이전트에 메시지
+  - [ ] `send_to(agent_name: str, message: str)` — 특정 에이전트에 메시지
+  - [ ] `shutdown_team()` — 모든 에이전트 종료 + TeamDelete
+  - [ ] `get_status() → TeamStatus` — 팀 상태 조회
+- [ ] `TeamConfig` dataclass:
+  - [ ] team_name: str
+  - [ ] members: list[AgentMember]
+  - [ ] task_list_path: Path
+- [ ] `AgentHandle` dataclass:
+  - [ ] agent_id: str
+  - [ ] agent_type: AgentType
+  - [ ] status: "idle" | "working" | "shutdown"
+- [ ] 테스트: `tests/test_team_manager.py`
+  - [ ] 팀 생성/삭제
+  - [ ] 에이전트 스폰
+  - [ ] 작업 할당
+  - [ ] 메시지 전송
+  - [ ] 상태 조회
+
+### 1.5-2. `src/agents/team_executor.py` — 팀 기반 실행기 (신규)
+
+> AgentExecutor를 대체하여 Agent Teams로 작업 실행
+
+- [ ] `TeamExecutor` 클래스 구현:
+  - [ ] `execute(task: AgentTask) → AgentResult`
+    - TeamManager를 통해 적절한 에이전트에 작업 할당
+    - 에이전트 완료 대기 (SendMessage 수신)
+    - 결과 수집 후 AgentResult 반환
+  - [ ] `execute_pipeline(tasks: list[AgentTask]) → list[AgentResult]`
+    - 순차 실행: architect → coder → tester → reviewer
+    - 각 단계 결과를 다음 단계에 컨텍스트로 전달
+    - 병렬 가능한 단계는 동시 실행 (예: qa + qc)
+  - [ ] `execute_parallel(tasks: list[AgentTask]) → list[AgentResult]`
+    - 독립적인 작업들을 여러 에이전트에 동시 할당
+    - 모든 결과 수집 후 반환
+- [ ] AgentExecutor와의 관계:
+  - [ ] TeamExecutor가 AgentExecutor를 래핑 (Agent Teams 비활성화 시 폴백)
+  - [ ] `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 일 때만 TeamExecutor 사용
+  - [ ] 환경변수 미설정 시 기존 AgentExecutor 동작 유지
+- [ ] 테스트: `tests/test_team_executor.py`
+  - [ ] 단일 작업 실행
+  - [ ] 파이프라인 실행
+  - [ ] 병렬 실행
+  - [ ] Agent Teams 비활성화 시 폴백
+  - [ ] 에이전트 실패 시 재시도
+
+### 1.5-3. Orchestrator 팀 모드 통합 (`src/orchestrator/main.py` 수정)
+
+> main.py의 run() 루프가 TeamExecutor를 사용하도록 전환
+
+- [ ] `__init__()` 수정:
+  - [ ] Agent Teams 활성화 여부 확인
+  - [ ] 활성화 시: TeamManager 초기화 + TeamExecutor 사용
+  - [ ] 비활성화 시: 기존 AgentExecutor 사용 (하위 호환)
+- [ ] `run()` 수정:
+  - [ ] 시작 시 팀 생성 (TeamManager.create_team())
+  - [ ] Phase별 적절한 에이전트 조합 사용:
+    - Phase 1 (Setup): architect 단독
+    - Phase 2-5 (Build): coder + tester + reviewer 파이프라인
+    - Phase 6 (QA/QC): qa + qc 병렬
+    - Phase 7 (Document): documenter 단독
+  - [ ] 종료 시 팀 정리 (TeamManager.shutdown_team())
+- [ ] `_phase_setup()` 수정:
+  - [ ] TeamExecutor 통해 architect 에이전트 실행
+- [ ] `_phase_document()` 수정:
+  - [ ] TeamExecutor 통해 documenter 에이전트 실행
+- [ ] 테스트: `tests/test_main.py` 팀 모드 테스트 추가
+
+### 1.5-4. 프로젝트 시작 시 Agent Teams 자동 설정
+
+> `adev` 실행 시 타겟 프로젝트에 Agent Teams 환경 자동 구성
+
+- [ ] `src/agents/team_setup.py` 신규:
+  - [ ] `setup_agent_teams(project_path: str)`:
+    - 타겟 프로젝트의 `.claude/settings.json`에 Agent Teams 환경변수 설정
+    - `.claude/agents/` 디렉토리에 에이전트 정의 파일 복사/생성
+    - `.claude/skills/` 디렉토리에 스킬 파일 복사/생성
+    - CLAUDE.md 기본 템플릿 생성 (프로젝트 규칙)
+  - [ ] `validate_agent_teams(project_path: str) → bool`:
+    - Agent Teams 설정 유효성 검사
+    - 필수 파일 존재 여부 확인
+    - 환경변수 설정 확인
+- [ ] Orchestrator._phase_setup()에서 호출:
+  - [ ] 타겟 프로젝트에 Agent Teams 환경이 없으면 자동 설정
+  - [ ] 기존 설정이 있으면 스킵
+- [ ] 테스트: `tests/test_team_setup.py`
+  - [ ] 빈 프로젝트에 Agent Teams 설정 생성
+  - [ ] 기존 설정 유지 (덮어쓰기 방지)
+  - [ ] 유효성 검사
+
+### Phase 1.5 검증 체크리스트
+
+- [ ] `pytest tests/ -v --cov` — 전체 통과
+- [ ] `ruff check src/` — 린트 클린
+- [ ] `mypy src/` — 타입 체크 통과
+- [ ] TeamManager: 팀 생성/삭제/에이전트 스폰 동작 확인
+- [ ] TeamExecutor: 단일/파이프라인/병렬 실행 확인
+- [ ] Orchestrator: Agent Teams 모드로 전체 루프 동작 확인
+- [ ] Agent Teams 비활성화 시 기존 동작 유지 확인
+- [ ] 프로젝트 시작 시 Agent Teams 자동 설정 확인
 
 ---
 

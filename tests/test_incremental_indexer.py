@@ -32,6 +32,8 @@ from src.rag.incremental_indexer import (
     SUPPORTED_EXTENSIONS,
     IncrementalIndexer,
     _build_indexer,
+    _build_pathspec,
+    _load_gitignore_spec,
     get_indexer,
     reset_indexer,
 )
@@ -1121,12 +1123,16 @@ class TestSingletonPattern:
         mock_scorer = MagicMock()
         mock_store = MagicMock()
         mock_embedder = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.rag.include_patterns = []
+        mock_settings.rag.exclude_patterns = []
 
         with (
             patch("src.rag.incremental_indexer.BM25Scorer", return_value=mock_scorer),
             patch("src.rag.incremental_indexer.create_vector_store", return_value=mock_store),
             patch("src.rag.incremental_indexer.AnthropicEmbedder", return_value=mock_embedder),
             patch("src.rag.chunker.ASTChunker", return_value=mock_chunker),
+            patch("src.infra.config.get_settings", return_value=mock_settings),
         ):
             # Act
             instance = _build_indexer(str(tmp_path))
@@ -1427,3 +1433,241 @@ class TestEdgeCases:
 
         # Assert
         mock_store.add.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 9. .gitignore 필터링 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestGitignoreFiltering:
+    """.gitignore 패턴 필터링 테스트."""
+
+    def test_gitignore_log_files_excluded(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """.gitignore에 *.log 패턴이 있을 때 .log 파일이 인덱싱에서 제외되는지 검증."""
+        # Arrange — .gitignore에 *.log 추가
+        (tmp_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+        # .log는 SUPPORTED_EXTENSIONS에 없으므로 실제 테스트를 위해 지원 목록을 패치
+        # 대신 .gitignore 필터가 먼저 동작하는 것을 테스트
+        (tmp_path / "debug.log").write_text("log data\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+        )
+
+        # Act — SUPPORTED_EXTENSIONS에 .log를 추가한 상태에서 테스트
+        with patch("src.rag.incremental_indexer.SUPPORTED_EXTENSIONS", frozenset({".py", ".log"})):
+            files = indexer._collect_files()
+
+        # Assert: .log 파일 제외, .py 파일 포함
+        suffixes = {f.suffix for f in files}
+        assert ".log" not in suffixes
+        assert ".py" in suffixes
+
+    def test_no_gitignore_collects_all_supported(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """.gitignore가 없을 때 기존 동작(지원 확장자 수집)을 유지하는지 검증."""
+        # Arrange — .gitignore 없음
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "module.ts").write_text("const x = 1;\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+        )
+
+        # Act
+        files = indexer._collect_files()
+
+        # Assert: gitignore 없으면 지원 파일 모두 수집
+        suffixes = {f.suffix for f in files}
+        assert ".py" in suffixes
+        assert ".ts" in suffixes
+
+    def test_gitignore_with_directory_pattern_excluded(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """.gitignore에 디렉토리 패턴(temp/)이 있을 때 해당 디렉토리 내 파일이 제외되는지 검증."""
+        # Arrange — .gitignore에 temp/ 추가
+        (tmp_path / ".gitignore").write_text("temp/\n", encoding="utf-8")
+        (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        (temp_dir / "helper.py").write_text("def h(): pass\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+        )
+
+        # Act
+        files = indexer._collect_files()
+
+        # Assert: temp/ 아래 파일 제외, main.py 포함
+        file_names = {f.name for f in files}
+        assert "helper.py" not in file_names
+        assert "main.py" in file_names
+
+    def test_exclude_patterns_applied(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """exclude_patterns 설정이 적용되어 해당 파일이 제외되는지 검증."""
+        # Arrange — exclude_patterns에 *_test.py 패턴 설정
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "app_test.py").write_text("def test_x(): pass\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+            exclude_patterns=["*_test.py"],
+        )
+
+        # Act
+        files = indexer._collect_files()
+
+        # Assert: *_test.py 제외, app.py 포함
+        file_names = {f.name for f in files}
+        assert "app_test.py" not in file_names
+        assert "app.py" in file_names
+
+    def test_include_patterns_does_not_override_supported_extensions(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """include_patterns가 비어있을 때 SUPPORTED_EXTENSIONS 기본 동작이 유지되는지 검증."""
+        # Arrange
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "data.csv").write_text("a,b\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+            include_patterns=[],
+        )
+
+        # Act
+        files = indexer._collect_files()
+
+        # Assert: .py 포함, .csv 제외
+        suffixes = {f.suffix for f in files}
+        assert ".py" in suffixes
+        assert ".csv" not in suffixes
+
+    def test_load_gitignore_spec_missing_returns_none(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """.gitignore가 없으면 _load_gitignore_spec()이 None을 반환하는지 검증."""
+        result = _load_gitignore_spec(tmp_path)
+        assert result is None
+
+    def test_load_gitignore_spec_valid_file(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """유효한 .gitignore가 있으면 PathSpec 인스턴스를 반환하는지 검증."""
+        (tmp_path / ".gitignore").write_text("*.log\n__pycache__/\n", encoding="utf-8")
+        result = _load_gitignore_spec(tmp_path)
+        assert result is not None
+
+    def test_build_pathspec_empty_patterns_returns_none(self) -> None:
+        """빈 패턴 목록으로 _build_pathspec()을 호출하면 None을 반환하는지 검증."""
+        result = _build_pathspec([])
+        assert result is None
+
+    def test_build_pathspec_valid_patterns(self) -> None:
+        """유효한 패턴 목록으로 PathSpec 인스턴스가 생성되는지 검증."""
+        result = _build_pathspec(["*.log", "temp/"])
+        assert result is not None
+
+    def test_gitignore_corrupt_file_returns_none_and_no_crash(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """손상된 .gitignore 파일(읽기 실패)이 있어도 None을 반환하고 크래시 없는지 검증."""
+        gitignore = tmp_path / ".gitignore"
+        gitignore.write_text("*.log\n", encoding="utf-8")
+
+        with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
+            result = _load_gitignore_spec(tmp_path)
+
+        assert result is None
+
+    def test_exclude_patterns_with_gitignore_both_applied(
+        self,
+        tmp_path: Path,
+        mock_chunker: MagicMock,
+        mock_scorer: MagicMock,
+        mock_store: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """.gitignore와 exclude_patterns가 함께 적용되는지 검증."""
+        # Arrange
+        (tmp_path / ".gitignore").write_text("ignored_dir/\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "excluded.py").write_text("y = 2\n", encoding="utf-8")
+        ignored_dir = tmp_path / "ignored_dir"
+        ignored_dir.mkdir()
+        (ignored_dir / "helper.py").write_text("def h(): pass\n", encoding="utf-8")
+
+        indexer = IncrementalIndexer(
+            chunker=mock_chunker,
+            scorer=mock_scorer,
+            store=mock_store,
+            embedder=mock_embedder,
+            project_path=str(tmp_path),
+            exclude_patterns=["excluded.py"],
+        )
+
+        # Act
+        files = indexer._collect_files()
+
+        # Assert: gitignore 제외 + exclude_patterns 제외 모두 적용
+        file_names = {f.name for f in files}
+        assert "helper.py" not in file_names    # .gitignore로 제외
+        assert "excluded.py" not in file_names  # exclude_patterns로 제외
+        assert "app.py" in file_names           # 포함

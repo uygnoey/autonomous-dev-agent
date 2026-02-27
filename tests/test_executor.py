@@ -16,40 +16,7 @@ from src.agents.executor import (
     AgentProfile,
     AgentType,
 )
-
-# ---------------------------------------------------------------------------
-# 헬퍼 / Helpers
-# ---------------------------------------------------------------------------
-
-def make_mock_query(*messages):
-    """테스트용 비동기 제너레이터 팩토리.
-
-    Args:
-        *messages: yield할 메시지 시퀀스
-
-    Returns:
-        async generator function
-    """
-    async def _mock(*args, **kwargs):
-        for msg in messages:
-            yield msg
-    return _mock
-
-
-def make_assistant_message(text: str) -> AssistantMessage:
-    """AssistantMessage mock 생성.
-
-    Args:
-        text: TextBlock에 담을 텍스트
-
-    Returns:
-        AssistantMessage spec의 MagicMock
-    """
-    mock_block = MagicMock(spec=TextBlock)
-    mock_block.text = text
-    mock_msg = MagicMock(spec=AssistantMessage)
-    mock_msg.content = [mock_block]
-    return mock_msg
+from tests.conftest import make_assistant_message, make_mock_query
 
 
 # ---------------------------------------------------------------------------

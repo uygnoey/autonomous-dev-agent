@@ -31,7 +31,12 @@ class AgentSettings(BaseModel):
 
 
 class RAGSettings(BaseModel):
-    """RAG 시스템 설정."""
+    """RAG 시스템 설정.
+
+    KR: RAG 파이프라인의 청킹, 검색, 필터링 동작을 제어하는 설정 모델.
+    EN: Settings model that controls chunking, retrieval, and filtering behavior of the RAG
+    pipeline.
+    """
 
     chunk_strategy: str = "ast"
     bm25_weight: float = 0.6
@@ -39,6 +44,15 @@ class RAGSettings(BaseModel):
     top_k: int = 10
     use_vector_search: bool = False
     cache_enabled: bool = True
+
+    # .gitignore 외에 추가로 인덱싱에 포함/제외할 glob 패턴 목록
+    # KR: 빈 리스트이면 기본 동작(SUPPORTED_EXTENSIONS만 허용)을 따른다.
+    # EN: Empty list means default behavior (only SUPPORTED_EXTENSIONS are allowed).
+    include_patterns: list[str] = []
+
+    # KR: 이 패턴에 매칭되는 파일은 .gitignore와 무관하게 인덱싱에서 제외한다.
+    # EN: Files matching these patterns are excluded from indexing regardless of .gitignore.
+    exclude_patterns: list[str] = []
 
 
 class TokenSettings(BaseModel):

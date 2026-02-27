@@ -1,8 +1,30 @@
-"""Anthropic Voyage AI 임베딩 모듈.
+"""Anthropic Voyage AI 임베딩 모듈 / Anthropic Voyage AI Embedding Module.
 
-Voyage AI API(voyage-3 모델)를 호출하여 텍스트를 벡터로 변환한다.
-SHA256 기반 파일 캐시로 중복 API 호출을 방지하고,
-API 실패 시 graceful degradation으로 빈 벡터를 반환한다.
+KR:
+    Voyage AI API(voyage-3 모델)를 호출하여 텍스트를 벡터로 변환한다.
+    SHA256 기반 파일 캐시로 중복 API 호출을 방지하고,
+    API 실패 시 graceful degradation으로 빈 벡터를 반환한다.
+
+    폴백 모드 (Fallback Mode):
+        VOYAGE_API_KEY / ANTHROPIC_API_KEY 가 모두 없거나 API 호출이 영구 실패하면
+        자동으로 BM25-only 폴백 모드로 전환된다.
+        - claude-agent-sdk 및 anthropic SDK 모두 임베딩 API를 제공하지 않으므로
+          subscription 환경에서는 벡터 검색 대신 BM25 텍스트 검색만 사용된다.
+        - is_available=False + fallback_mode=True 상태가 된다.
+        - 이후 embed() 호출은 즉시 빈 리스트를 반환한다.
+
+EN:
+    Calls Voyage AI API (voyage-3 model) to convert text into embedding vectors.
+    Prevents duplicate API calls using SHA256-based file cache.
+    Returns empty vectors via graceful degradation on API failure.
+
+    Fallback Mode:
+        Automatically switches to BM25-only fallback mode when both
+        VOYAGE_API_KEY / ANTHROPIC_API_KEY are absent or API calls permanently fail.
+        - Neither claude-agent-sdk nor anthropic SDK provides an embeddings API,
+          so subscription environments use BM25 text search instead of vector search.
+        - State becomes is_available=False + fallback_mode=True.
+        - Subsequent embed() calls immediately return an empty list.
 
 EmbeddingProtocol(src/core/interfaces.py)을 구조적으로 준수한다.
 """
@@ -43,35 +65,79 @@ _DEFAULT_CACHE_PATH = ".rag_cache/embeddings.json"
 
 
 class AnthropicEmbedder:
-    """Voyage AI API 기반 텍스트 임베딩기.
+    """Voyage AI API 기반 텍스트 임베딩기 / Voyage AI API-based text embedder.
 
-    EmbeddingProtocol(src/core/interfaces.py)을 구조적으로 준수한다.
+    KR:
+        EmbeddingProtocol(src/core/interfaces.py)을 구조적으로 준수한다.
 
-    - VOYAGE_API_KEY 또는 ANTHROPIC_API_KEY 환경변수로 인증
-    - SHA256 기반 디스크 캐시로 중복 API 호출 방지
-    - 최대 BATCH_SIZE(96)개씩 배치 분할 호출
-    - API 실패 시 3회 지수 백오프 재시도 후 is_available=False
+        - VOYAGE_API_KEY 또는 ANTHROPIC_API_KEY 환경변수로 인증
+        - SHA256 기반 디스크 캐시로 중복 API 호출 방지
+        - 최대 BATCH_SIZE(96)개씩 배치 분할 호출
+        - API 실패 시 3회 지수 백오프 재시도 후 is_available=False
+        - API 키 없음 또는 영구 실패 시 fallback_mode=True로 BM25 전용 전환
+
+    EN:
+        Structurally complies with EmbeddingProtocol(src/core/interfaces.py).
+
+        - Authenticates via VOYAGE_API_KEY or ANTHROPIC_API_KEY env variable
+        - Prevents duplicate API calls with SHA256-based disk cache
+        - Splits into batches of BATCH_SIZE(96) for API calls
+        - After 3 exponential backoff retries on failure, sets is_available=False
+        - Sets fallback_mode=True for BM25-only mode when no key or permanent failure
     """
 
-    BATCH_SIZE: int = 96  # Voyage AI API 배치 제한
+    BATCH_SIZE: int = 96  # Voyage AI API 배치 제한 / Voyage AI API batch limit
 
     def __init__(self, cache_path: str = _DEFAULT_CACHE_PATH) -> None:
-        """
+        """임베딩기 초기화 / Initialize embedder.
+
+        KR:
+            API 키 존재 여부에 따라 벡터 검색 모드 또는 BM25 폴백 모드로 시작한다.
+            API 키가 없으면 즉시 fallback_mode=True로 설정되며 경고를 로깅한다.
+
+        EN:
+            Starts in vector search mode or BM25 fallback mode based on API key presence.
+            If no API key found, immediately sets fallback_mode=True and logs a warning.
+
         Args:
-            cache_path: 임베딩 캐시 JSON 파일 경로
+            cache_path: 임베딩 캐시 JSON 파일 경로 / Path to the embedding cache JSON file
         """
         self._api_key: str | None = (
             os.environ.get("VOYAGE_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         )
         self._cache_path = Path(cache_path)
         self._cache: dict[str, list[float]] = self._load_cache()
-        # API 키 존재 + 최근 호출 성공 여부
+        # API 키 존재 + 최근 호출 성공 여부 / Whether API key exists and last call succeeded
         self._available: bool = self._api_key is not None
+        # BM25 폴백 모드 여부 / Whether in BM25-only fallback mode
+        self._fallback_mode: bool = self._api_key is None
+
+        if self._fallback_mode:
+            logger.warning(
+                "AnthropicEmbedder: VOYAGE_API_KEY와 ANTHROPIC_API_KEY 모두 없음. "
+                "벡터 검색 비활성화, BM25 폴백 모드로 전환. "
+                "/ Neither VOYAGE_API_KEY nor ANTHROPIC_API_KEY found. "
+                "Vector search disabled, switching to BM25 fallback mode."
+            )
 
     @property
     def is_available(self) -> bool:
-        """임베딩 가능 여부 (API 키 존재 + 최근 호출 성공)."""
+        """임베딩 가능 여부 (API 키 존재 + 최근 호출 성공) / Whether embedding is available."""
         return self._available
+
+    @property
+    def fallback_mode(self) -> bool:
+        """BM25 전용 폴백 모드 여부 / Whether in BM25-only fallback mode.
+
+        KR:
+            True이면 embed()는 항상 빈 리스트를 반환하고,
+            호출측은 BM25만으로 검색을 수행해야 한다.
+
+        EN:
+            If True, embed() always returns an empty list,
+            and the caller should rely solely on BM25 for search.
+        """
+        return self._fallback_mode
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """텍스트 목록을 임베딩 벡터로 변환한다.
@@ -158,8 +224,13 @@ class AnthropicEmbedder:
             임베딩 벡터 목록. 실패 시 None.
         """
         if not self._api_key:
-            logger.warning("AnthropicEmbedder: API 키 없음. 임베딩 불가.")
+            # 폴백 모드 상태 보장 / Ensure fallback mode state is set
+            logger.warning(
+                "AnthropicEmbedder: API 키 없음. 임베딩 불가. BM25 폴백 모드. "
+                "/ No API key found. Embedding unavailable. BM25 fallback mode."
+            )
             self._available = False
+            self._fallback_mode = True
             return None
 
         last_error: Exception | None = None
@@ -193,9 +264,15 @@ class AnthropicEmbedder:
                     await asyncio.sleep(delay)
 
                 else:
-                    # 4xx 클라이언트 오류는 재시도 불필요
-                    logger.error(f"AnthropicEmbedder: 클라이언트 오류 ({status}), 재시도 중단.")
+                    # 4xx 클라이언트 오류는 재시도 불필요 / 4xx client errors do not need retry
+                    logger.error(
+                        f"AnthropicEmbedder: 클라이언트 오류 ({status}), 재시도 중단. "
+                        f"BM25 폴백 모드로 전환. "
+                        f"/ Client error ({status}), stopping retry. "
+                        f"Switching to BM25 fallback mode."
+                    )
                     self._available = False
+                    self._fallback_mode = True
                     return None
 
                 last_error = exc
@@ -211,9 +288,12 @@ class AnthropicEmbedder:
 
         logger.error(
             f"AnthropicEmbedder: {_MAX_RETRIES}회 재시도 후 실패. "
-            f"벡터 검색 비활성화. 마지막 오류: {last_error}"
+            f"벡터 검색 비활성화, BM25 폴백 모드로 전환. 마지막 오류: {last_error} "
+            f"/ After {_MAX_RETRIES} retries, permanently failed. "
+            f"Vector search disabled, switching to BM25 fallback mode. Last error: {last_error}"
         )
         self._available = False
+        self._fallback_mode = True
         return None
 
     async def _call_voyage_api(self, texts: list[str]) -> list[list[float]]:
