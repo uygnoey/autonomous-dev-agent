@@ -2,9 +2,9 @@
 
 > **전체 계획**: `.claude/plans/ancient-sleeping-petal.md` 참조
 > **마지막 업데이트**: 2026-02-27
-> **현재 상태**: Phase 0 완료, Phase 1 대부분 완료 (미완료 6개), Phase 2 착수 전
-> **프로젝트 버전**: v0.2.0
-> **소스 현황**: 40개 파일, src/, 561개 테스트, QA/QC ALL PASS
+> **현재 상태**: Phase 0 완료, Phase 1 완료, Phase 1.5/2 착수 전
+> **프로젝트 버전**: v0.2.1
+> **소스 현황**: 40개 파일, src/, 577개 테스트, QA/QC ALL PASS, 커버리지 90%
 
 ---
 
@@ -90,10 +90,10 @@
 - [x] `pytest-benchmark>=4.0` → [dev] extra
 - [x] 버전 0.1.0 → 0.2.0
 
-### 0-4. 미완료 (Phase 3에서 처리)
+### 0-4. 추가 완료 (2026-02-27)
 
-- [ ] `tests/conftest.py` 공통 픽스처 통합 (make_mock_query 등)
-- [ ] `src/utils/__init__.py` → `src/infra/*` re-export 리다이렉트
+- [x] `tests/conftest.py` 공통 픽스처 통합 (make_mock_query, make_assistant_message)
+- [x] `src/utils/__init__.py` → `src/infra/*` re-export 리다이렉트 (AppSettings, EventBus, setup_logger, StateStore 등)
 
 ### 0-5. 검증 결과
 
@@ -103,7 +103,7 @@
 
 ---
 
-## Phase 1: RAG 시스템 전면 재설계 — TODO (다음 단계)
+## Phase 1: RAG 시스템 전면 재설계 — DONE
 
 > 현재 RAG: Boolean BoW(단어 존재 여부만 체크), 전체 재인덱싱, 50줄 고정 청크
 > 목표: AST 기반 청크 + BM25 + 벡터 하이브리드 검색 + 증분 인덱싱
@@ -170,7 +170,7 @@
 - [x] `AnthropicEmbedder` 클래스 구현 (EmbeddingProtocol 구현체)
 - [x] Anthropic API 직접 호출:
   - [x] `ANTHROPIC_API_KEY` 환경변수 사용 (또는 `VOYAGE_API_KEY`)
-  - [ ] API 키 없을 때: claude-agent-sdk subscription 모드로 폴백
+  - [x] API 키 없을 때: fallback_mode=True로 BM25-only 자동 전환
   - [x] 모델: `voyage-3` 또는 Anthropic 기본 임베딩 모델
 - [x] 배치 처리:
   - [x] 한 번에 최대 96개 텍스트 (API 제한)
@@ -187,8 +187,8 @@
   - [x] API 호출 mock
   - [x] 배치 분할 로직
   - [x] 캐시 히트/미스
-  - [ ] 에러 시 graceful degradation
-  - [ ] SDK 폴백 모드
+  - [x] 에러 시 graceful degradation (4xx → 즉시 fallback, max retry 초과 → fallback)
+  - [x] SDK 폴백 모드 (fallback_mode property, BM25-only 자동 전환)
 
 ### 1-4. `src/rag/vector_store.py` — 벡터 저장소 (신규)
 
@@ -263,10 +263,10 @@
   - [x] `embeddings.json`: 임베딩 캐시
   - [x] `.gitignore`에 `.rag_cache/` 추가
 - [x] 파일 필터링:
-  - [ ] `.gitignore` 패턴 준수
+  - [x] `.gitignore` 패턴 준수 (pathspec 라이브러리 기반)
   - [x] 바이너리 파일 제외
   - [x] `__pycache__/`, `.git/`, `node_modules/`, `.venv/` 제외
-  - [ ] 설정 가능한 include/exclude 패턴
+  - [x] 설정 가능한 include/exclude 패턴 (RAGSettings.include_patterns/exclude_patterns)
 - [x] 싱글톤 패턴:
   - [x] `AgentExecutor._build_options()` 에서 매번 새 MCP 서버 생성하는 문제 해결
   - [x] 모듈 레벨 싱글톤 또는 의존성 주입으로 전환
@@ -275,7 +275,7 @@
   - [x] 파일 수정 후 증분 인덱싱 (변경분만 처리 확인)
   - [x] 파일 삭제 후 인덱스 정리
   - [x] 캐시 저장/로드
-  - [ ] .gitignore 패턴 필터링
+  - [x] .gitignore 패턴 필터링 (11개 테스트 추가)
   - [x] 빈 프로젝트 처리
 
 ### 1-7. `src/rag/mcp_server.py` — MCP 도구 확장 (기존 수정)
@@ -300,13 +300,16 @@
 
 ### Phase 1 검증 체크리스트
 
-- [x] `pytest tests/ -v --cov` — 전체 통과 (560/561 passed, 99.8%)
-- [x] `ruff check src/` — 린트 클린
-- [x] `mypy src/` — 타입 체크 통과
-- [x] 커버리지 90%+ 유지 (Phase 1 RAG: 93~100%, 전체: 84%)
+- [x] `pytest tests/ -v --cov` — 577/577 전체 통과 (100%)
+- [x] `ruff check src/` — 린트 클린 (40개 파일)
+- [x] `mypy src/` — 타입 체크 통과 (40개 파일)
+- [x] 커버리지 90% 유지
 - [x] BM25가 기존 Boolean BoW보다 관련 파일을 상위에 반환하는지 수동 검증
 - [x] 증분 인덱싱: 파일 수정 후 변경분만 처리되는지 확인
 - [x] MCP 서버 새 도구 3개 동작 확인
+- [x] embedder fallback 모드 동작 확인 (API 키 없음 / 4xx / max retry)
+- [x] .gitignore 필터링 동작 확인 (pathspec 기반)
+- [x] include/exclude 패턴 설정 동작 확인
 
 ---
 
@@ -708,21 +711,21 @@ Orchestrator
   - [ ] 필수 패키지 설치 확인
   - [ ] Claude Code 인증 확인
 
-### 3-4. src/utils/ → src/infra/ 리다이렉트
+### 3-4. src/utils/ → src/infra/ 리다이렉트 — DONE (Phase 0-4에서 선행 완료)
 
-- [ ] `src/utils/__init__.py` 수정:
-  - [ ] `from src.infra.config import get_settings, load_config, AppSettings`
-  - [ ] `from src.infra.events import EventBus, EventType, Event`
-  - [ ] `from src.infra.logger import setup_logger`
-  - [ ] `from src.infra.state import ProjectState, PhaseType, StateStore`
-  - [ ] `from src.infra.claude_client import call_claude_for_text`
+- [x] `src/utils/__init__.py` 수정:
+  - [x] `from src.infra.config import AppSettings, get_settings`
+  - [x] `from src.infra.events import Event, EventBus, EventType`
+  - [x] `from src.infra.logger import setup_logger`
+  - [x] `from src.infra.state import PhaseType, ProjectState, StateStore`
+  - [ ] `from src.infra.claude_client import call_claude_for_text` — Phase 3에서 추가
   - [ ] deprecation warning 추가
 
-### 3-5. tests/conftest.py 공통 픽스처
+### 3-5. tests/conftest.py 공통 픽스처 — DONE (Phase 0-4에서 선행 완료)
 
-- [ ] `make_mock_query()` 헬퍼 통합 (현재 3개 파일에 중복)
-- [ ] `make_assistant_message(text)` 팩토리
-- [ ] 공통 픽스처: event_bus, tmp_project, mock_settings 등
+- [x] `make_mock_query()` 헬퍼 통합
+- [x] `make_assistant_message(text)` 팩토리
+- [ ] 공통 픽스처: event_bus, tmp_project, mock_settings 등 — Phase 3에서 추가
 
 ### Phase 3 검증 체크리스트
 
@@ -922,12 +925,12 @@ python -m pytest tests/ -v --cov
 python -m ruff check src/
 python -m mypy src/
 
-# 4. 다음 작업: Phase 1 시작
+# 4. 다음 작업: Phase 1.5 또는 Phase 2 시작
 # 전체 계획 확인: .claude/plans/ancient-sleeping-petal.md
-# 이 파일의 Phase 1 섹션부터 순서대로 진행
+# Phase 0, Phase 1 완료 → Phase 1.5 (Agent Teams 통합) 또는 Phase 2 진행
 
 # 5. Claude Code 사용 시
-# "Phase 1 RAG 시스템 재설계 진행해줘" 라고 요청
+# "Phase 1.5 Agent Teams 통합 진행해줘" 라고 요청
 ```
 
 ---
@@ -946,6 +949,7 @@ python -m mypy src/
 - rank-bm25>=0.2.2 (Phase 0에서 추가)
 - structlog>=24.0 (Phase 0에서 추가)
 - numpy>=1.26.0 (Phase 0에서 추가)
+- pathspec>=0.12.0 (Phase 1에서 추가, .gitignore 파싱)
 
 ### Optional [rag]
 - lancedb>=0.6.0
