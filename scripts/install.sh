@@ -259,7 +259,7 @@ if [ "$INSTALL_MODE" = "remote" ]; then
     # 기존 디렉토리 확인
     if [ -d "$PROJECT_DIR" ]; then
         echo -e "${YELLOW}⚠️  기존 설치가 감지되었습니다: $PROJECT_DIR${NC}"
-        read -p "삭제하고 다시 설치하시겠습니까? (y/N): " -n 1 -r
+        read -p "삭제하고 다시 설치하시겠습니까? (y/N): " -n 1 -r < /dev/tty
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf "$PROJECT_DIR"
@@ -308,29 +308,82 @@ echo -e "${GREEN}✅ 의존성 설치 완료${NC}"
 echo ""
 
 # ============================================================================
-# 4. .env 파일 생성
+# 4. 인증 설정 (인터랙티브)
 # ============================================================================
-echo -e "${BLUE}━━━ [4/8] 환경 설정 파일 생성 ━━━${NC}"
+echo -e "${BLUE}━━━ [4/8] 인증 설정 ━━━${NC}"
 
+# 기본 .env 파일 생성
 if [ ! -f .env ]; then
-    if [ -f .env.example ]; then
-        cp .env.example .env
-        echo -e "${GREEN}✅ .env 파일 생성됨 (.env.example에서 복사)${NC}"
-    else
-        cat > .env << 'EOF'
-# Anthropic API Key (선택 - 없으면 Claude Code 세션 사용)
-# ANTHROPIC_API_KEY=sk-ant-your-key-here
-
+    cat > .env << 'ENVEOF'
 # Agent Teams 활성화
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 # 서브에이전트 모델
 CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-4-6
-EOF
-        echo -e "${GREEN}✅ .env 파일 생성됨 (기본 템플릿)${NC}"
-    fi
+ENVEOF
+    chmod 600 .env
+fi
+
+# 이미 API 키가 설정되어 있는지 확인
+# 플레이스홀더(your-key-here)가 아닌 실제 키가 설정되어 있는지 확인
+if grep -q "^ANTHROPIC_API_KEY=sk-" .env 2>/dev/null && ! grep -q "^ANTHROPIC_API_KEY=.*your-key-here" .env 2>/dev/null; then
+    echo -e "${GREEN}✅ API 키가 이미 설정되어 있습니다${NC}"
 else
-    echo -e "${GREEN}✅ .env 파일이 이미 존재합니다${NC}"
+    echo ""
+    echo -e "${CYAN}━━━ 인증 방법을 선택하세요 ━━━${NC}"
+    echo ""
+    echo -e "  ${YELLOW}1)${NC} API 키 입력 (ANTHROPIC_API_KEY)"
+    echo -e "  ${YELLOW}2)${NC} Claude 구독 로그인 (브라우저에서 인증)"
+    echo -e "  ${YELLOW}3)${NC} 나중에 설정 (건너뛰기)"
+    echo ""
+    # /dev/tty에서 읽어 curl | bash 파이프 환경에서도 인터랙션 가능
+    read -p "선택 (1/2/3): " -n 1 -r AUTH_CHOICE < /dev/tty
+    echo ""
+    read -r < /dev/tty 2>/dev/null || true  # -n 1 후 남은 개행문자 소비
+    echo ""
+
+    case "$AUTH_CHOICE" in
+        1)
+            echo -e "${YELLOW}🔑 Anthropic API 키를 입력하세요:${NC}"
+            echo -e "${CYAN}   (https://console.anthropic.com/settings/keys 에서 발급)${NC}"
+            echo ""
+            # -s: 입력 내용 화면에 표시 안 함 (보안)
+            read -s -r -p "API Key: " API_KEY < /dev/tty
+            echo ""
+
+            if [[ "$API_KEY" == sk-ant-* ]]; then
+                # 기존 ANTHROPIC_API_KEY 줄이 있으면 교체, 없으면 추가
+                if grep -q "ANTHROPIC_API_KEY" .env 2>/dev/null; then
+                    sed -i.bak "s|.*ANTHROPIC_API_KEY.*|ANTHROPIC_API_KEY=$API_KEY|" .env
+                    rm -f .env.bak
+                else
+                    echo "ANTHROPIC_API_KEY=$API_KEY" >> .env
+                fi
+                chmod 600 .env
+                unset API_KEY
+                echo -e "${GREEN}✅ API 키 저장 완료${NC}"
+            else
+                unset API_KEY
+                echo -e "${YELLOW}⚠️  유효하지 않은 키 형식입니다. 나중에 .env 파일에서 설정하세요.${NC}"
+            fi
+            ;;
+        2)
+            echo -e "${YELLOW}🌐 브라우저에서 Claude 로그인을 진행합니다...${NC}"
+            if command -v claude &> /dev/null; then
+                claude init
+                echo -e "${GREEN}✅ Claude 구독 인증 완료${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Claude Code가 아직 설치되지 않았습니다.${NC}"
+                echo -e "${YELLOW}   다음 단계에서 Claude Code 설치 후 'claude init'을 실행하세요.${NC}"
+            fi
+            ;;
+        3|*)
+            echo -e "${YELLOW}⏭️  인증 설정을 건너뜁니다.${NC}"
+            echo -e "${CYAN}   나중에 설정하려면:${NC}"
+            echo -e "${CYAN}   - API 키: .env 파일에 ANTHROPIC_API_KEY=sk-ant-... 추가${NC}"
+            echo -e "${CYAN}   - 구독: claude init 실행${NC}"
+            ;;
+    esac
 fi
 echo ""
 
