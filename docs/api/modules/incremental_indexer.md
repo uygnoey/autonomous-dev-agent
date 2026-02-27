@@ -21,6 +21,8 @@ def __init__(
     embedder: AnthropicEmbedder,
     project_path: str,
     cache_dir: str = ".rag_cache",
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> None
 ```
 
@@ -34,6 +36,8 @@ def __init__(
 | `embedder` | `AnthropicEmbedder` | — | 텍스트 임베딩기 |
 | `project_path` | `str` | — | 인덱싱할 프로젝트 루트 경로 |
 | `cache_dir` | `str` | `".rag_cache"` | 캐시 파일 저장 디렉토리 |
+| `include_patterns` | `list[str] \| None` | `None` | 추가 포함 glob 패턴 목록 (None이면 기본값 사용) |
+| `exclude_patterns` | `list[str] \| None` | `None` | 추가 제외 glob 패턴 목록 |
 
 #### 속성
 
@@ -94,6 +98,41 @@ async def search(self, query: str, top_k: int) -> list[CodeChunk]
 **반환값**: `list[CodeChunk]` — 관련성 높은 순으로 정렬된 청크 목록.
 
 ## 파일 필터링 규칙
+
+### 필터링 우선순위
+
+`_collect_files()` 메서드는 다음 5단계 순서로 파일을 필터링합니다:
+
+1. `IGNORED_DIRS` 하드코딩 제외
+2. `BINARY_EXTENSIONS` 제외
+3. `.gitignore` 패턴 매칭 제외 (`pathspec` 라이브러리 사용 가능 시)
+4. 사용자 정의 `exclude_patterns` 제외
+5. `SUPPORTED_EXTENSIONS` 또는 `include_patterns`에 매칭되는 파일만 포함
+
+### .gitignore 필터링
+
+`pathspec` 라이브러리가 설치되어 있으면 프로젝트 루트의 `.gitignore`를 자동으로 파싱하여, 해당 패턴과 일치하는 파일을 인덱싱에서 제외합니다.
+
+- `pathspec`이 없거나 `.gitignore` 파일이 없으면 이 단계를 건너뜁니다.
+- 경로는 프로젝트 루트 기준 상대 경로로 비교합니다.
+
+### 사용자 정의 패턴 (`include_patterns` / `exclude_patterns`)
+
+`RAGSettings.include_patterns`와 `RAGSettings.exclude_patterns` (또는 생성자 파라미터)로 glob 패턴을 추가할 수 있습니다.
+
+```yaml
+# config/default.yaml 또는 환경변수 ADEV_RAG__INCLUDE_PATTERNS / ADEV_RAG__EXCLUDE_PATTERNS
+rag:
+  include_patterns: []        # 추가 포함 패턴 (기본 동작: SUPPORTED_EXTENSIONS만 허용)
+  exclude_patterns:           # 추가 제외 패턴 (.gitignore와 무관하게 적용)
+    - "tests/fixtures/**"
+    - "docs/**"
+```
+
+| 설정 | 동작 |
+|------|------|
+| `include_patterns` | 빈 리스트이면 `SUPPORTED_EXTENSIONS`만 허용 |
+| `exclude_patterns` | .gitignore와 무관하게 항상 적용 |
 
 ### 제외 디렉토리 (`IGNORED_DIRS`)
 
@@ -159,7 +198,7 @@ BINARY_EXTENSIONS = frozenset({
 def get_indexer(project_path: str) -> IncrementalIndexer
 ```
 
-최초 호출 시 기본 컴포넌트(`ASTChunker`, `BM25Scorer`, `create_vector_store()`, `AnthropicEmbedder()`)로 인스턴스를 생성합니다. 이후 호출 시 동일 인스턴스를 반환합니다.
+최초 호출 시 기본 컴포넌트(`ASTChunker`, `BM25Scorer`, `create_vector_store()`, `AnthropicEmbedder()`)로 인스턴스를 생성합니다. `RAGSettings.include_patterns`와 `RAGSettings.exclude_patterns`를 읽어 인덱서에 전달합니다. 이후 호출 시 동일 인스턴스를 반환합니다.
 
 ### `reset_indexer() -> None`
 

@@ -6,6 +6,52 @@ Autonomous Dev Agent의 버전별 변경 이력.
 
 ---
 
+## [0.2.1] - 2026-02-27
+
+### Added (추가)
+
+- **AnthropicEmbedder Fallback 모드** (`src/rag/embedder.py`)
+  - `fallback_mode` property 추가: BM25-only 폴백 모드 여부 반환
+  - API 키(`VOYAGE_API_KEY` / `ANTHROPIC_API_KEY`) 미설정 시 초기화 단계에서 즉시 `fallback_mode=True`로 전환
+  - 4xx 클라이언트 오류 발생 시 재시도 없이 `fallback_mode=True`로 전환
+  - 3회 재시도 후 영구 실패 시 `fallback_mode=True`로 전환
+  - Subscription 환경(API 키 없이 Claude Code 세션 사용)에서 BM25-only 모드로 정상 동작
+
+- **IncrementalIndexer .gitignore 필터링** (`src/rag/incremental_indexer.py`)
+  - `pathspec` 라이브러리 기반 `.gitignore` 패턴 파싱 추가
+  - `_load_gitignore_spec()`: 프로젝트 루트 `.gitignore`를 파싱하여 `PathSpec` 반환
+  - `_build_pathspec()`: glob 패턴 목록에서 `PathSpec` 생성
+  - `_is_gitignored()`: 경로가 .gitignore 패턴에 매칭되는지 확인
+  - `_is_excluded()`: 경로가 `exclude_patterns`에 매칭되는지 확인
+  - `_collect_files()`: 5단계 필터링 순서로 재정비 (IGNORED_DIRS → BINARY → .gitignore → exclude → SUPPORTED_EXTENSIONS)
+  - `include_patterns`, `exclude_patterns` 생성자 파라미터 추가
+
+- **RAGSettings 패턴 필드** (`src/infra/config.py`)
+  - `include_patterns: list[str] = []` 필드 추가
+  - `exclude_patterns: list[str] = []` 필드 추가
+  - 환경변수 `ADEV_RAG__INCLUDE_PATTERNS`, `ADEV_RAG__EXCLUDE_PATTERNS`로 오버라이드 가능
+
+- **src/utils/__init__.py re-export** (`src/utils/__init__.py`)
+  - `src.infra.config`, `src.infra.events`, `src.infra.logger`, `src.infra.state` 모듈 심볼 re-export 추가
+  - 하위 호환성 유지: 기존 `from src.utils import get_settings` 등 import 경로 유지
+
+- **테스트 픽스처 통합** (`tests/conftest.py`)
+  - `make_mock_query`, `make_assistant_message` 공통 픽스처 통합
+
+### Changed (변경)
+
+- `_collect_files()` 필터링 로직: 2단계(IGNORED_DIRS, SUPPORTED_EXTENSIONS) → 5단계로 확장
+- `_build_indexer()`: `RAGSettings.include_patterns`, `RAGSettings.exclude_patterns`를 읽어 인덱서에 전달
+
+### Tested (테스트)
+
+- 총 단위 테스트 577개 — 100% 통과 (기존 561개 → 16개 추가)
+- ruff: All checks passed (40개 파일)
+- mypy: Success, no issues found (40개 파일)
+- 커버리지: 90%
+
+---
+
 ## [0.3.0] - 2026-02-26
 
 ### Added (추가)

@@ -45,14 +45,23 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 | IncrementalIndexer | `src/rag/incremental_indexer.py` | 완료 |
 | MCP Server | `src/rag/mcp_server.py` | 완료 |
 
-### 테스트 결과
+### Phase 0/1 추가 개선 사항 (2026-02-27)
+
+| 개선 항목 | 설명 |
+|-----------|------|
+| **Embedder Fallback 모드** | API 키 없음 또는 영구 실패 시 `fallback_mode=True`로 BM25-only 자동 전환. Subscription 환경 완전 지원. |
+| **`.gitignore` 필터링** | `pathspec` 라이브러리로 프로젝트 루트 `.gitignore` 파싱 후 해당 파일 인덱싱 제외 |
+| **`include_patterns` / `exclude_patterns`** | `RAGSettings`에 추가된 설정값으로 인덱싱 대상 파일을 glob 패턴으로 세밀하게 제어 |
+| **conftest.py 픽스처 통합** | `make_mock_query`, `make_assistant_message` 공통 픽스처를 `tests/conftest.py`로 통합 |
+
+### 테스트 결과 (Phase 0/1 최종)
 
 | 구분 | 테스트 수 | 결과 |
 |------|-----------|------|
-| 단위 테스트 | 306개 | 100% 통과 |
+| 단위 테스트 | 577개 | 100% 통과 |
 | 모듈 QC 테스트 | 70,000개 | 100% 통과 |
 | E2E 통합 테스트 | 35개 | 100% 통과 |
-| **합계** | **70,341개** | **100% 통과** |
+| **합계** | **70,612개** | **100% 통과** |
 
 ---
 
@@ -61,9 +70,9 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 - **자율 개발 루프**: Planner가 다음 작업을 결정하고, Executor가 코드를 작성하고, Verifier가 pytest + ruff + mypy로 검증하는 사이클을 완성 조건을 만족할 때까지 반복합니다.
 - **AST 기반 청킹**: Python 파일을 함수·클래스·메서드 경계로 분할하여 의미 단위 컨텍스트를 보존합니다. 비Python 파일은 50줄 오버랩 폴백을 사용합니다.
 - **BM25 렉시컬 검색**: rank-bm25 라이브러리 기반 IDF 가중치 스코어링. camelCase, snake_case 코드 특화 토큰화를 포함합니다.
-- **벡터 시맨틱 검색**: Voyage AI (voyage-3 모델) 임베딩과 코사인 유사도 검색. SHA256 캐시로 중복 API 호출을 방지합니다.
+- **벡터 시맨틱 검색**: Voyage AI (voyage-3 모델) 임베딩과 코사인 유사도 검색. SHA256 캐시로 중복 API 호출을 방지합니다. API 키 없음 또는 영구 실패 시 `fallback_mode=True`로 BM25-only 모드로 자동 전환합니다.
 - **하이브리드 검색**: BM25(0.6)와 벡터(0.4) 결과를 min-max 정규화 후 가중 합산합니다. 벡터 검색 불가 시 BM25-only 모드로 자동 전환합니다.
-- **증분 인덱싱**: mtime 기반으로 변경 파일만 재인덱싱하여 대형 프로젝트의 인덱싱 지연을 최소화합니다.
+- **증분 인덱싱**: mtime 기반으로 변경 파일만 재인덱싱하여 대형 프로젝트의 인덱싱 지연을 최소화합니다. `.gitignore` 패턴과 사용자 정의 `include_patterns`/`exclude_patterns`로 인덱싱 대상을 세밀하게 제어합니다.
 - **5종 MCP 도구**: search_code, reindex_codebase, search_by_symbol, get_file_structure, get_similar_patterns를 에이전트에 제공합니다.
 - **Textual TUI**: 스펙 확정 대화 화면(SpecScreen)과 실시간 개발 대시보드(DevScreen)로 구성된 터미널 인터페이스를 제공합니다.
 - **토큰 한도 자동 대기**: API rate limit 초과 시 지수 백오프로 대기했다가 재시작합니다.
@@ -83,6 +92,7 @@ Claude API로 판단하고 Claude Agent SDK로 실행하는 자율 무한 루프
 | 벡터 연산 | numpy >= 1.26.0 |
 | 벡터 DB (선택) | lancedb >= 0.6.0 |
 | 임베딩 API | Voyage AI (voyage-3) via httpx |
+| gitignore 파싱 | pathspec >= 0.12.0 |
 | 데이터 검증 | pydantic >= 2.0, pydantic-settings >= 2.0 |
 | 설정 파일 | pyyaml >= 6.0 |
 | 테스트 | pytest >= 8.0, pytest-asyncio >= 0.24, pytest-cov >= 5.0 |

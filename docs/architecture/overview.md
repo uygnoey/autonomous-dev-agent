@@ -54,8 +54,8 @@ Phase 1은 Autonomous Dev Agent의 RAG(Retrieval-Augmented Generation) 시스템
 │               │  │ scorer.py│  │                                     │
 │  file_path    │  │          │  │  .embed(texts) → list[list[float]]  │
 │  content      │  │  .fit()  │  │  .is_available → bool               │
-│  start_line   │  │  .score()│  │  SHA256 캐시                        │
-│  end_line     │  │  .top_k()│  │  지수 백오프 재시도                   │
+│  start_line   │  │  .score()│  │  .fallback_mode → bool              │
+│  end_line     │  │  .top_k()│  │  SHA256 캐시 / 지수 백오프 재시도    │
 │  chunk_type   │  └──────────┘  └──────────────────┬────────────────┘
 │  name         │                                   │
 └───────────────┘         ┌────────────────────────▼────────────────┐
@@ -97,7 +97,7 @@ build_rag_mcp_server(project_path)
 
 index():
     store.clear()
-    _collect_files()             [SUPPORTED_EXTENSIONS 파일 수집, IGNORED_DIRS 제외]
+    _collect_files()             [5단계 필터링: IGNORED_DIRS → BINARY_EXTENSIONS → .gitignore → exclude_patterns → SUPPORTED_EXTENSIONS]
     for file in files:
         _chunk_file(file)        [ASTChunker.chunk(path, content)]
     _fit_and_embed(all_chunks):
@@ -113,7 +113,7 @@ index():
 ```
 indexer.update()
     _detect_changes():
-        current = {path: path.stat().st_mtime for path in _collect_files()}
+        current = {path: path.stat().st_mtime for path in _collect_files()}  # .gitignore + exclude_patterns 적용
         cached = _load_file_index()
         new_files = [p for p in current if p not in cached]
         modified_files = [p for p in current if p in cached and mtime 변경]
@@ -170,11 +170,14 @@ core/interfaces.py (ChunkerProtocol, ScorerProtocol, EmbeddingProtocol)
 | 상황 | 처리 방식 |
 |------|----------|
 | Python SyntaxError | 폴백: 50줄 고정 블록 청킹 |
-| Voyage AI API 실패 | 3회 재시도 후 BM25-only 모드 |
+| API 키 없음 (Subscription 환경) | 초기화 즉시 `fallback_mode=True`, BM25-only 모드 |
+| Voyage AI API 4xx 클라이언트 오류 | 재시도 없이 `fallback_mode=True`로 전환 |
+| Voyage AI API 5xx / 네트워크 오류 | 3회 지수 백오프 재시도 후 `fallback_mode=True` |
 | LanceDBStore 초기화 실패 | NumpyStore로 자동 폴백 |
 | 파일 읽기 실패 | 경고 로그, 해당 파일 건너뜀 |
 | BM25 빈 쿼리 | 빈 리스트 반환 |
 | 캐시 파일 손상 | 빈 딕셔너리로 시작, 재인덱싱 |
+| .gitignore 파싱 실패 | 경고 로그, gitignore 필터 비활성화 후 계속 진행 |
 
 ---
 

@@ -4,6 +4,50 @@
 
 ---
 
+## RAGSettings (설정)
+
+**파일**: `src/infra/config.py`
+
+RAG 파이프라인의 동작을 제어하는 설정 모델. `AppSettings.rag` 필드로 접근합니다.
+
+### 필드 목록
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `chunk_strategy` | `str` | `"ast"` | 청킹 전략 |
+| `bm25_weight` | `float` | `0.6` | 하이브리드 검색에서 BM25 가중치 |
+| `vector_weight` | `float` | `0.4` | 하이브리드 검색에서 벡터 가중치 |
+| `top_k` | `int` | `10` | 검색 결과 최대 반환 수 |
+| `use_vector_search` | `bool` | `False` | 벡터 검색 활성화 여부 |
+| `cache_enabled` | `bool` | `True` | 캐시 활성화 여부 |
+| `include_patterns` | `list[str]` | `[]` | 추가 포함 glob 패턴 목록 |
+| `exclude_patterns` | `list[str]` | `[]` | 추가 제외 glob 패턴 목록 |
+
+### include_patterns / exclude_patterns
+
+인덱싱 대상 파일을 glob 패턴으로 세밀하게 제어합니다.
+
+- **`include_patterns`**: 비어 있으면 `SUPPORTED_EXTENSIONS`(`.py`, `.ts`, `.js` 등)만 허용합니다.
+- **`exclude_patterns`**: `.gitignore`와 무관하게 해당 패턴에 매칭되는 파일을 항상 인덱싱에서 제외합니다.
+
+**환경변수 오버라이드 예시:**
+
+```bash
+ADEV_RAG__EXCLUDE_PATTERNS='["tests/fixtures/**","docs/**"]' uv run python -m src.orchestrator.main spec.md
+```
+
+**`config/default.yaml` 예시:**
+
+```yaml
+rag:
+  include_patterns: []
+  exclude_patterns:
+    - "tests/qc/**"
+    - "tests/qa/**"
+```
+
+---
+
 ## RAG MCP 서버
 
 **파일**: `src/rag/mcp_server.py`

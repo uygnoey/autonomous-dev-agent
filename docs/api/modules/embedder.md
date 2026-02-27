@@ -4,6 +4,14 @@
 
 Anthropic Voyage AI 임베딩 모듈. Voyage AI API(`voyage-3` 모델)를 호출하여 텍스트를 벡터로 변환합니다. SHA256 기반 파일 캐시로 중복 API 호출을 방지하고, API 실패 시 graceful degradation으로 빈 벡터를 반환합니다.
 
+### Subscription 환경 지원 (Fallback Mode)
+
+`VOYAGE_API_KEY`와 `ANTHROPIC_API_KEY`가 모두 없거나 API 호출이 영구 실패하면 **BM25-only 폴백 모드**로 자동 전환됩니다.
+
+- `is_available=False`, `fallback_mode=True` 상태가 됩니다.
+- 이후 `embed()` 호출은 즉시 빈 리스트를 반환합니다.
+- Subscription 환경(claude-agent-sdk / anthropic SDK)에서는 임베딩 API가 제공되지 않으므로 벡터 검색 대신 BM25 텍스트 검색만 사용됩니다.
+
 ## 클래스
 
 ### `AnthropicEmbedder`
@@ -43,6 +51,27 @@ def is_available(self) -> bool
 
 `True`: API 키 존재 + 최근 호출 성공.
 `False`: API 키 없음 또는 최근 API 실패.
+
+---
+
+##### `fallback_mode -> bool`
+
+BM25 전용 폴백 모드 여부를 반환합니다.
+
+```python
+@property
+def fallback_mode(self) -> bool
+```
+
+`True`이면 `embed()`는 항상 빈 리스트를 반환하고, 호출측은 BM25만으로 검색을 수행합니다.
+
+**폴백 모드 진입 조건:**
+
+| 조건 | 설명 |
+|------|------|
+| API 키 없음 | `VOYAGE_API_KEY`와 `ANTHROPIC_API_KEY` 모두 미설정 시 초기화 단계에서 즉시 전환 |
+| 4xx 클라이언트 오류 | 잘못된 키 등 클라이언트 측 오류 → 재시도 없이 즉시 전환 |
+| 최대 재시도 초과 | 3회 지수 백오프 재시도 후 영구 실패 시 전환 |
 
 #### 메서드
 
@@ -111,8 +140,13 @@ from src.rag.embedder import AnthropicEmbedder
 embedder = AnthropicEmbedder()
 
 async def main():
+    # fallback_mode 확인 (API 키 없음 / 영구 실패 시 True)
+    if embedder.fallback_mode:
+        print("BM25-only 폴백 모드 — 벡터 검색 비활성화")
+        return
+
     if not embedder.is_available:
-        print("API 키 없음, BM25-only 모드로 동작")
+        print("임베딩 일시 불가")
         return
 
     texts = [
