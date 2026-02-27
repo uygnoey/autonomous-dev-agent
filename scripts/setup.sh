@@ -31,32 +31,38 @@ fi
 echo "📦 의존성 설치..."
 uv pip install -e ".[dev]"
 
-# 5. Claude Code 설치 확인
+# 5. 시스템 전역 CLI 설치 (어디서든 adev 실행 가능)
+echo "🔧 adev CLI 전역 설치..."
+pip install -e "." 2>/dev/null || pip3 install -e "." 2>/dev/null || {
+    echo "   ⚠️  전역 설치 실패. 가상환경 내에서만 adev 사용 가능합니다."
+}
+
+# 6. Claude Code 설치 확인
 if ! command -v claude &> /dev/null; then
     echo "📦 Claude Code 설치..."
     npm install -g @anthropic-ai/claude-code
 fi
 
-# 6. Claude Agent SDK 설치 확인
+# 7. Claude Agent SDK 설치 확인
 uv pip show claude-agent-sdk &>/dev/null || {
     echo "📦 Claude Agent SDK 설치..."
     uv pip install claude-agent-sdk
 }
 
-# 7. Agent Teams 환경변수 확인
+# 8. Agent Teams 환경변수 확인
 echo "✅ Agent Teams 설정 확인..."
 grep -q "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" .claude/settings.json && \
     echo "   Agent Teams: 활성화됨" || \
     echo "   ⚠️  .claude/settings.json에 Agent Teams 설정이 없습니다"
 
-# 8. tmux 설치 확인 (Agent Teams에 필요)
+# 9. tmux 설치 확인 (Agent Teams에 필요)
 if ! command -v tmux &> /dev/null; then
     echo "⚠️  tmux가 설치되어 있지 않습니다. Agent Teams의 split-pane 모드에 필요합니다."
     echo "   sudo apt install tmux  (Ubuntu/Debian)"
     echo "   brew install tmux      (macOS)"
 fi
 
-# 9. 검증
+# 10. 검증
 echo ""
 echo "🔍 환경 검증..."
 claude doctor 2>/dev/null && echo "   Claude Code: OK" || echo "   ⚠️  claude doctor 실행 실패"
